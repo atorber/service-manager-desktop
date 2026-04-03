@@ -62,7 +62,7 @@ impl ConfigManager {
                             }
                         }
                         if has_new {
-                            let _ = Self::write_config(&self.config_file_path, &cfg);
+                            let _ = Self::write_config(&self.config_file_path, &cfg).ok();
                         }
                         return cfg;
                     }
@@ -89,7 +89,7 @@ impl ConfigManager {
                         }
                     }
                     let migrated = ServicesConfig { services };
-                    let _ = Self::write_config(&self.config_file_path, &migrated);
+                    let _ = Self::write_config(&self.config_file_path, &migrated).ok();
                     return migrated;
                 }
             }
@@ -98,14 +98,16 @@ impl ConfigManager {
         get_default_services_config()
     }
 
-    fn write_config(path: &Path, config: &ServicesConfig) -> bool {
-        match serde_json::to_string_pretty(config) {
-            Ok(data) => fs::write(path, data).is_ok(),
-            Err(_) => false,
+    fn write_config(path: &Path, config: &ServicesConfig) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {}", e))?;
         }
+        let data =
+            serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {}", e))?;
+        fs::write(path, &data).map_err(|e| format!("写入配置失败: {}", e))
     }
 
-    pub fn save_config(&self) -> bool {
+    pub fn save_config(&self) -> Result<(), String> {
         Self::write_config(&self.config_file_path, &self.config)
     }
 
@@ -142,10 +144,9 @@ impl ConfigManager {
             updated_at: Some(now),
         };
         self.config.services.insert(id, svc.clone());
-        if self.save_config() {
-            Some(svc)
-        } else {
-            None
+        match self.save_config() {
+            Ok(()) => Some(svc),
+            Err(_) => None,
         }
     }
 
@@ -153,10 +154,10 @@ impl ConfigManager {
         &mut self,
         service_id: &str,
         updates: serde_json::Value,
-    ) -> bool {
+    ) -> Result<(), String> {
         let existing = match self.config.services.get(service_id) {
             Some(s) => s.clone(),
-            None => return false,
+            None => return Err("服务不存在".into()),
         };
 
         let mut updated = existing.clone();
@@ -194,7 +195,7 @@ impl ConfigManager {
                 return false;
             }
             self.config.services.remove(service_id);
-            self.save_config()
+            self.save_config().is_ok()
         } else {
             false
         }
@@ -221,7 +222,7 @@ impl ConfigManager {
 
     pub fn reset_to_defaults(&mut self) -> bool {
         self.config = get_default_services_config();
-        self.save_config()
+        self.save_config().is_ok()
     }
 
     pub fn root_dir(&self) -> &str {

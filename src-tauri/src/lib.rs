@@ -274,10 +274,9 @@ async fn update_service(
     updates: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().await;
-    if s.config_manager.update_service_config(&service_id, updates) {
-        Ok(json!({"success": true, "message": "配置已保存"}))
-    } else {
-        Ok(json!({"success": false, "message": "保存配置失败"}))
+    match s.config_manager.update_service_config(&service_id, updates) {
+        Ok(()) => Ok(json!({"success": true, "message": "配置已保存"})),
+        Err(e) => Ok(json!({"success": false, "message": e})),
     }
 }
 

@@ -29,7 +29,17 @@ pub fn load_pids(pid_file: &str) -> HashMap<String, u32> {
 }
 
 pub fn save_pids(pid_file: &str, pids: &HashMap<String, u32>) {
-    let _ = fs::write(pid_file, serde_json::to_string_pretty(pids).unwrap_or_default());
+    let path = std::path::Path::new(pid_file);
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!("[pids] create_dir_all {:?}: {}", parent, e);
+            return;
+        }
+    }
+    match fs::write(path, serde_json::to_string_pretty(pids).unwrap_or_default()) {
+        Ok(()) => {}
+        Err(e) => eprintln!("[pids] write {:?}: {}", path, e),
+    }
 }
 
 // ── Port detection ────────────────────────────────────────────────────
