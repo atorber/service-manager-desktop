@@ -124,10 +124,15 @@ impl ConfigManager {
     pub fn create_service(&mut self, data: serde_json::Value) -> Option<ServiceConfig> {
         let id = self.generate_id();
         let now = chrono::Utc::now().to_rfc3339();
+        let working_dir = data["workingDir"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("{rootDir}")
+            .to_string();
         let svc = ServiceConfig {
             id: id.clone(),
             name: data["name"].as_str().unwrap_or("").to_string(),
-            working_dir: data["workingDir"].as_str().unwrap_or("").to_string(),
+            working_dir,
             command: data["command"].as_str().unwrap_or("").to_string(),
             port: data["port"].as_u64().unwrap_or(0) as u16,
             url_template: data["urlTemplate"].as_str().map(|s| s.to_string()),

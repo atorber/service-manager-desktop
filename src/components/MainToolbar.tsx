@@ -7,7 +7,6 @@ import {
   SyncOutlined,
   SettingOutlined,
   LinkOutlined,
-  MoreOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, Space, Typography, Tag } from 'antd';
 import type { MenuProps } from 'antd';
@@ -24,13 +23,9 @@ interface Props {
   onRestart: () => void;
   onRefresh: () => void;
   onOpenLogsDir: () => void;
-  onServiceConfig: () => void;
   onWeChatConfig: () => void;
   onOpenUrl?: (url: string) => void;
   url?: string | null;
-  onStartAll: () => void;
-  onStopAll: () => void;
-  onRestartAll: () => void;
 }
 
 const MainToolbar: React.FC<Props> = ({
@@ -44,22 +39,11 @@ const MainToolbar: React.FC<Props> = ({
   onRestart,
   onRefresh,
   onOpenLogsDir,
-  onServiceConfig,
   onWeChatConfig,
   onOpenUrl,
   url,
-  onStartAll,
-  onStopAll,
-  onRestartAll,
 }) => {
-  const batchItems: MenuProps['items'] = [
-    { key: 'all-start', label: '全部启动（后端+前端）', onClick: onStartAll },
-    { key: 'all-stop', label: '全部停止', onClick: onStopAll },
-    { key: 'all-restart', label: '全部重启', onClick: onRestartAll },
-  ];
-
   const moreItems: MenuProps['items'] = [
-    { key: 'cfg', label: '服务配置', icon: <SettingOutlined />, onClick: onServiceConfig },
     ...(selectedService?.id === 'wechat'
       ? [{ key: 'wx', label: '微信推送配置', onClick: onWeChatConfig }]
       : []),
@@ -107,11 +91,6 @@ const MainToolbar: React.FC<Props> = ({
               </Button>
             </>
           )}
-          <Dropdown menu={{ items: batchItems }} trigger={['click']}>
-            <Button size="small" icon={<MoreOutlined />}>
-              全栈
-            </Button>
-          </Dropdown>
           <Button size="small" icon={<SyncOutlined />} onClick={onRefresh}>
             刷新
           </Button>

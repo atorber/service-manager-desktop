@@ -28,18 +28,12 @@
     "targets": "all",
     "windows": {
       "nsis": {
-        "oneClick": false,
-        "allowToChangeInstallationDirectory": true,
-        "createDesktopShortcut": true,
-        "createStartMenuShortcut": true,
-        "shortcutName": "服务管理器",
-        "runAfterFinish": true
+        "installMode": "currentUser",
+        "startMenuFolder": "服务管理器"
       }
     }
   },
   "plugins": {
-    "dialog": {
-      "all": true
-    }
+    "dialog": null
   }
 }

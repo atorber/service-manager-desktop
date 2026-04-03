@@ -22,18 +22,15 @@ pub struct AppState {
 
 #[tauri::command]
 async fn start_service(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
     service: String,
 ) -> Result<serde_json::Value, String> {
-    if service == "all" {
-        return start_all(state).await;
-    }
-
-    let (root_dir, config, working_dir) = {
+    let (config, working_dir) = {
         let s = state.lock().await;
         let cfg = s.config_manager.get_service_config(&service);
         let wd = s.config_manager.resolve_working_dir(&service);
-        (s.root_dir.clone(), cfg, wd)
+        (cfg, wd)
     };
 
     let config = match config {
@@ -49,7 +46,7 @@ async fn start_service(
         }
     };
 
-    match service_manager::start_service(&root_dir, &config, &working_dir).await {
+    match service_manager::start_service(app, &service, &config, &working_dir).await {
         Ok((success, pid, message)) => {
             if success {
                 if let Some(pid) = pid {
@@ -64,81 +61,10 @@ async fn start_service(
     }
 }
 
-async fn start_all(
-    state: tauri::State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
-    // Start backend first
-    let (root_dir, backend_cfg, backend_wd) = {
-        let s = state.lock().await;
-        (
-            s.root_dir.clone(),
-            s.config_manager.get_service_config("backend"),
-            s.config_manager.resolve_working_dir("backend"),
-        )
-    };
-
-    let mut errors = Vec::new();
-
-    if let (Some(cfg), Some(wd)) = (backend_cfg, backend_wd) {
-        match service_manager::start_service(&root_dir, &cfg, &wd).await {
-            Ok((success, pid, msg)) => {
-                if success {
-                    if let Some(pid) = pid {
-                        let mut s = state.lock().await;
-                        s.pids.insert("backend".into(), pid);
-                        save_pids(&s.pid_file, &s.pids);
-                    }
-                } else {
-                    errors.push(format!("后端: {}", msg));
-                }
-            }
-            Err(e) => errors.push(format!("后端: {}", e)),
-        }
-    }
-
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    // Then start frontend
-    let (frontend_cfg, frontend_wd) = {
-        let s = state.lock().await;
-        (
-            s.config_manager.get_service_config("frontend"),
-            s.config_manager.resolve_working_dir("frontend"),
-        )
-    };
-
-    if let (Some(cfg), Some(wd)) = (frontend_cfg, frontend_wd) {
-        match service_manager::start_service(&root_dir, &cfg, &wd).await {
-            Ok((success, pid, msg)) => {
-                if success {
-                    if let Some(pid) = pid {
-                        let mut s = state.lock().await;
-                        s.pids.insert("frontend".into(), pid);
-                        save_pids(&s.pid_file, &s.pids);
-                    }
-                } else {
-                    errors.push(format!("前端: {}", msg));
-                }
-            }
-            Err(e) => errors.push(format!("前端: {}", e)),
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(json!({"success": true, "message": "全栈服务启动完成"}))
-    } else {
-        Ok(json!({"success": false, "message": errors.join("\n")}))
-    }
-}
-
 async fn stop_service_inner(
     state: &Mutex<AppState>,
     service: &str,
 ) -> Result<serde_json::Value, String> {
-    if service == "all" {
-        return stop_all_inner(state).await;
-    }
-
     let (config, pid_file) = {
         let s = state.lock().await;
         (
@@ -160,36 +86,6 @@ async fn stop_service_inner(
     Ok(json!({"success": success, "message": message}))
 }
 
-async fn stop_all_inner(state: &Mutex<AppState>) -> Result<serde_json::Value, String> {
-    let mut errors = Vec::new();
-
-    for svc in &["backend", "frontend"] {
-        let (config, pid_file) = {
-            let s = state.lock().await;
-            (
-                s.config_manager.get_service_config(svc),
-                s.pid_file.clone(),
-            )
-        };
-        let mut pids = { state.lock().await.pids.clone() };
-        let (success, msg) =
-            service_manager::stop_service(svc, config.as_ref(), &mut pids, &pid_file).await;
-        {
-            let mut s = state.lock().await;
-            s.pids = pids;
-        }
-        if !success {
-            errors.push(format!("{}: {}", svc, msg));
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(json!({"success": true, "message": "全栈服务已停止"}))
-    } else {
-        Ok(json!({"success": false, "message": errors.join("\n")}))
-    }
-}
-
 #[tauri::command]
 async fn stop_service(
     state: tauri::State<'_, Mutex<AppState>>,
@@ -200,12 +96,13 @@ async fn stop_service(
 
 #[tauri::command]
 async fn restart_service(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
     service: String,
 ) -> Result<serde_json::Value, String> {
     let _ = stop_service_inner(&*state, &service).await;
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    start_service(state, service).await
+    start_service(app, state, service).await
 }
 
 #[tauri::command]
@@ -233,9 +130,10 @@ async fn get_service_status(
 
 #[tauri::command]
 async fn start_wechat(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    start_service(state, "wechat".to_string()).await
+    start_service(app, state, "wechat".to_string()).await
 }
 
 #[tauri::command]

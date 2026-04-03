@@ -7,7 +7,6 @@ import ServiceSidebar from './components/ServiceSidebar';
 import MainToolbar from './components/MainToolbar';
 import LogConsole from './components/LogConsole';
 import WeChatBotControls from './components/WeChatBotControls';
-import ServiceConfigDialog from './components/ServiceConfig';
 import ServiceLogDrawer from './components/ServiceLogDrawer';
 import ServiceEditDialog from './components/ServiceEditDialog';
 
@@ -36,8 +35,6 @@ function App() {
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [ready, setReady] = useState(true);
   const [showWeChatConfig, setShowWeChatConfig] = useState(false);
-  const [showServiceConfig, setShowServiceConfig] = useState(false);
-  const [configServiceId, setConfigServiceId] = useState<string | null>(null);
   const [showServiceEdit, setShowServiceEdit] = useState(false);
   const [editService, setEditService] = useState<ServiceConfig | null>(null);
   const [logDrawerId, setLogDrawerId] = useState<string | null>(null);
@@ -71,6 +68,20 @@ function App() {
       }
     }
   };
+
+  const formatLogEntry = (l: LogEntry) => {
+    const prefix =
+      l.type === 'error'
+        ? '[ERROR]'
+        : l.type === 'success'
+          ? '[SUCCESS]'
+          : l.type === 'warning'
+            ? '[WARNING]'
+            : '[INFO]';
+    return `${l.timestamp} ${prefix} ${l.message}`;
+  };
+
+  const formatLogsForConsole = (logs: LogEntry[]) => logs.map(formatLogEntry);
 
   const loadAllServices = async () => {
     try {
@@ -159,16 +170,14 @@ function App() {
   };
 
   const startService = async (svc: string) => {
-    const serviceId = svc === 'all' ? 'backend' : svc;
+    const serviceId = svc;
     addLog(`正在启动${svc}服务...`, 'info', serviceId);
     try {
       const result = await api.serviceManager.start(svc);
       if (result.success) {
         addLog(`${svc}服务启动成功`, 'success', serviceId);
         addLog(result.message, 'info', serviceId);
-        if (svc !== 'all') {
-          setServiceState((prev) => ({ ...prev, [serviceId]: { running: true, pid: undefined } }));
-        }
+        setServiceState((prev) => ({ ...prev, [svc]: { running: true, pid: undefined } }));
       } else {
         addLog(`${svc}服务启动失败: ${result.message}`, 'error', serviceId);
       }
@@ -179,7 +188,7 @@ function App() {
   };
 
   const stopService = async (svc: string) => {
-    const serviceId = svc === 'all' ? 'backend' : svc;
+    const serviceId = svc;
     addLog(`正在停止${svc}服务...`, 'info', serviceId);
     try {
       const result = await api.serviceManager.stop(svc);
@@ -196,7 +205,7 @@ function App() {
   };
 
   const restartService = async (svc: string) => {
-    const serviceId = svc === 'all' ? 'backend' : svc;
+    const serviceId = svc;
     addLog(`正在重启${svc}服务...`, 'info', serviceId);
     try {
       const result = await api.serviceManager.restart(svc);
@@ -273,6 +282,7 @@ function App() {
   };
 
   const unlistenWechatLog = useRef<(() => void) | undefined>(undefined);
+  const unlistenServiceLog = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +298,16 @@ function App() {
         } catch {
           /* 后端未发 wechat-log 事件时可忽略 */
         }
+
+        try {
+          const u = await api.onServiceLog((payload) => {
+            const type = payload.type === 'error' ? 'error' : 'info';
+            addLog(payload.message, type, payload.serviceId);
+          });
+          if (!cancelled) unlistenServiceLog.current = u;
+        } catch {
+          /* ignore */
+        }
       } catch {
         addLog('初始化失败', 'error');
       }
@@ -295,6 +315,7 @@ function App() {
     return () => {
       cancelled = true;
       unlistenWechatLog.current?.();
+      unlistenServiceLog.current?.();
     };
   }, []);
 
@@ -319,6 +340,7 @@ function App() {
       : null;
 
   const canRestart = selected ? selected.id !== 'wechat' && running : false;
+  const fullCommand = selected?.command?.trim() ? selected.command : null;
 
   return (
     <ConfigProvider
@@ -332,7 +354,7 @@ function App() {
         },
       }}
     >
-      <div className="sm-app">
+      <div className={`sm-app${selected ? ' sm-app--with-rail' : ''}`}>
         <ServiceSidebar
           services={allServices}
           serviceState={serviceState}
@@ -346,7 +368,7 @@ function App() {
 
         <div className="sm-main">
           <MainToolbar
-            title={selected ? selected.name : '操作日志'}
+            title={selected ? selected.name : '日志'}
             subtitle={selected ? (running ? '运行中' : '已停止') : undefined}
             selectedService={selected}
             running={running}
@@ -361,36 +383,15 @@ function App() {
             onOpenLogsDir={async () => {
               await api.openLogsDir();
             }}
-            onServiceConfig={() => {
-              if (selected) {
-                setConfigServiceId(selected.id);
-                setShowServiceConfig(true);
-              }
-            }}
             onWeChatConfig={() => setShowWeChatConfig(true)}
             onOpenUrl={(u) => api.openExternal(u)}
             url={url}
-            onStartAll={() => startService('all')}
-            onStopAll={() => {
-              Modal.confirm({
-                title: '确认停止',
-                content: '确定要停止全栈服务吗？',
-                onOk: () => stopService('all'),
-              });
-            }}
-            onRestartAll={() => {
-              Modal.confirm({
-                title: '确认重启',
-                content: '确定要重启全栈服务吗？',
-                onOk: () => restartService('all'),
-              });
-            }}
           />
 
           <div className="sm-main-body">
             <div className="sm-panel-head">
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                <UnorderedListOutlined /> 操作日志
+                <UnorderedListOutlined /> 日志
               </Typography.Text>
               <Space>
                 {selected && (
@@ -398,12 +399,31 @@ function App() {
                     查看「{selected.name}」日志
                   </Button>
                 )}
-                <Button type="link" size="small" onClick={() => setGlobalLogs([])}>
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => {
+                    if (!selectedServiceId) {
+                      setGlobalLogs([]);
+                      return;
+                    }
+                    setServiceLogs((prev) => ({
+                      ...prev,
+                      [selectedServiceId]: [],
+                    }));
+                  }}
+                >
                   清空
                 </Button>
               </Space>
             </div>
-            <LogConsole lines={globalLogs} />
+            <LogConsole
+              lines={
+                selectedServiceId
+                  ? formatLogsForConsole(serviceLogs[selectedServiceId] || [])
+                  : globalLogs
+              }
+            />
           </div>
 
           <footer className="sm-statusbar">
@@ -421,7 +441,21 @@ function App() {
           </footer>
         </div>
 
-        {selected && !selected.isPreset && (
+        {selected && (
+          <aside className="sm-command-rail" aria-label="当前任务启动命令">
+            <div className="sm-command-rail-head">
+              <Typography.Text strong style={{ fontSize: 12 }}>
+                {selected.name}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                启动命令
+              </Typography.Text>
+            </div>
+            <pre className="sm-command-rail-body">{fullCommand || '—'}</pre>
+          </aside>
+        )}
+
+        {selected && (
           <div className="sm-floating-actions">
             <Button size="small" onClick={() => handleEditService(selected)}>
               编辑任务
@@ -440,19 +474,6 @@ function App() {
           onRefresh={fetchWeChatStatus}
           addLog={addLog}
           onClose={() => setShowWeChatConfig(false)}
-        />
-
-        <ServiceConfigDialog
-          visible={showServiceConfig}
-          initialServiceId={configServiceId}
-          onClose={() => {
-            setShowServiceConfig(false);
-            setConfigServiceId(null);
-          }}
-          onSave={() => {
-            fetchStatus();
-            fetchWeChatStatus();
-          }}
         />
 
         <ServiceLogDrawer

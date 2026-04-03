@@ -1,0 +1,67 @@
+{
+  "services": {
+    "weibo_update": {
+      "id": "weibo_update",
+      "name": "微博更新到数据库",
+      "workingDir": "{rootDir}",
+      "command": "cd /Users/app/ && python app/tools/update_weibo.py",
+      "port": 0,
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    },
+    "frontend": {
+      "id": "frontend",
+      "name": "前端服务",
+      "workingDir": "{rootDir}/web-antd",
+      "command": "npm run dev",
+      "port": 8000,
+      "urlTemplate": "http://localhost:{port}",
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    },
+    "qwen_voice_to_text": {
+      "id": "qwen_voice_to_text",
+      "name": "千问语音转文本",
+      "workingDir": "{rootDir}",
+      "command": "cd /Users/app/ && python app/tools/chrome_test_weibo_qwen.py",
+      "port": 0,
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    },
+    "wechat": {
+      "id": "wechat",
+      "name": "微信机器人",
+      "workingDir": "{rootDir}/scripts/wxagent",
+      "command": "npm run start",
+      "port": 19088,
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    },
+    "task_1775200250780_18a2aef6670153b8": {
+      "id": "task_1775200250780_18a2aef6670153b8",
+      "name": "百舸前端",
+      "workingDir": "{rootDir}",
+      "command": "cd /Users/luyuchao/baidu/inf-fe/baige/ && npm run start-online",
+      "port": 0,
+      "enabled": true,
+      "isPreset": false,
+      "createdAt": "2026-04-03T07:10:50.780934+00:00",
+      "updatedAt": "2026-04-03T08:35:40.508112+00:00"
+    },
+    "backend": {
+      "id": "backend",
+      "name": "后端服务",
+      "workingDir": "{rootDir}/app",
+      "command": "python main.py",
+      "port": 5000,
+      "urlTemplate": "http://localhost:{port}/docs",
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    }
+  }
+}

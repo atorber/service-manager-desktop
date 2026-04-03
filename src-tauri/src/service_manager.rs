@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
+use std::io::{BufRead, BufReader};
 
 use crate::service_config::ServiceConfig;
 
@@ -204,26 +206,14 @@ pub async fn kill_process(pid: u32) -> bool {
     true
 }
 
-// ── Parse command ─────────────────────────────────────────────────────
-
-fn parse_command(cmd_str: &str) -> (String, Vec<String>) {
-    let parts: Vec<&str> = cmd_str.trim().split_whitespace().collect();
-    if parts.is_empty() {
-        return (String::new(), vec![]);
-    }
-    let cmd = parts[0].to_string();
-    let args = parts[1..].iter().map(|s| s.to_string()).collect();
-    (cmd, args)
-}
-
 // ── Start service ─────────────────────────────────────────────────────
 
 pub async fn start_service(
-    root_dir: &str,
+    app: AppHandle,
+    service_id: &str,
     config: &ServiceConfig,
     working_dir: &str,
 ) -> Result<(bool, Option<u32>, String), String> {
-    // Check port if > 0
     if config.port > 0 {
         let in_use = is_port_in_use(config.port).await;
         if in_use {
@@ -239,150 +229,196 @@ pub async fn start_service(
         return Ok((false, None, format!("工作目录不存在: {}", working_dir)));
     }
 
-    let (cmd, args) = parse_command(&config.command);
-    if cmd.is_empty() {
+    let cmd_str = config.command.trim();
+    if cmd_str.is_empty() {
         return Ok((false, None, "启动命令为空".to_string()));
     }
 
-    let is_script_task = config.port == 0;
-
-    // Windows script tasks: use PowerShell Start-Process to get real PID
-    #[cfg(target_os = "windows")]
-    if is_script_task {
-        return start_script_task_windows(root_dir, config, working_dir, &cmd, &args).await;
-    }
-
-    let env_vars = vec![
-        ("ROOT_PATH".to_string(), root_dir.to_string()),
-        (
-            "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION".to_string(),
-            "python".to_string(),
-        ),
-    ];
-
-    let mut command = std::process::Command::new(&cmd);
-    command.args(&args).current_dir(working_dir);
-    for (k, v) in &env_vars {
-        command.env(k, v);
-    }
-
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
-        if !is_script_task {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
-        }
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        unsafe {
-            command.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
-        }
-    }
-
-    // For services with port > 0, we use shell mode
-    #[cfg(target_os = "windows")]
-    {
-        let mut shell_cmd = std::process::Command::new("cmd");
-        shell_cmd
-            .args(["/C", &config.command])
-            .current_dir(working_dir);
-        for (k, v) in &env_vars {
-            shell_cmd.env(k, v);
-        }
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        shell_cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
-        shell_cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-
-        match shell_cmd.spawn() {
-            Ok(child) => {
-                let pid = child.id();
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if is_process_running(pid).await {
-                    return Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)));
-                } else {
-                    return Ok((false, None, "启动失败，进程已退出".to_string()));
-                }
-            }
-            Err(e) => return Ok((false, None, format!("启动失败: {}", e))),
-        }
+        return start_service_windows(&app, service_id, config, working_dir).await;
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        start_service_unix(&app, service_id, config, working_dir).await
+    }
+}
 
-        match command.spawn() {
-            Ok(child) => {
-                let pid = child.id();
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if is_process_running(pid).await {
-                    Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
-                } else {
-                    Ok((false, None, "启动失败，进程已退出".to_string()))
+#[cfg(not(target_os = "windows"))]
+async fn start_service_unix(
+    app: &AppHandle,
+    service_id: &str,
+    config: &ServiceConfig,
+    working_dir: &str,
+) -> Result<(bool, Option<u32>, String), String> {
+    let _ = app.emit(
+        "service-log",
+        serde_json::json!({
+            "serviceId": service_id,
+            "type": "info",
+            "message": format!("$ {}", config.command)
+        }),
+    );
+
+    let mut command = std::process::Command::new("sh");
+    command
+        .args(["-c", &config.command])
+        .current_dir(working_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        command.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+
+    match command.spawn() {
+        Ok(mut child) => {
+            let pid = child.id();
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if !is_process_running(pid).await {
+                let mut err_msg = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    use std::io::Read;
+                    let _ = stderr.read_to_string(&mut err_msg);
                 }
+                let detail = if err_msg.trim().is_empty() {
+                    "进程启动后立即退出".to_string()
+                } else {
+                    err_msg.trim().to_string()
+                };
+                return Ok((false, None, format!("启动失败: {}", detail)));
             }
-            Err(e) => Ok((false, None, format!("启动失败: {}", e))),
+
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+            let app_out = app.clone();
+            let app_err = app.clone();
+            let sid_out = service_id.to_string();
+            let sid_err = service_id.to_string();
+
+            if let Some(out) = stdout {
+                std::thread::spawn(move || {
+                    let reader = BufReader::new(out);
+                    for line in reader.lines().flatten() {
+                        let _ = app_out.emit(
+                            "service-log",
+                            serde_json::json!({
+                                "serviceId": sid_out,
+                                "type": "info",
+                                "message": line
+                            }),
+                        );
+                    }
+                });
+            }
+
+            if let Some(err) = stderr {
+                std::thread::spawn(move || {
+                    let reader = BufReader::new(err);
+                    for line in reader.lines().flatten() {
+                        let _ = app_err.emit(
+                            "service-log",
+                            serde_json::json!({
+                                "serviceId": sid_err,
+                                "type": "error",
+                                "message": line
+                            }),
+                        );
+                    }
+                });
+            }
+
+            Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
         }
+        Err(e) => Ok((false, None, format!("启动失败: {}", e))),
     }
 }
 
 #[cfg(target_os = "windows")]
-async fn start_script_task_windows(
-    root_dir: &str,
+async fn start_service_windows(
+    app: &AppHandle,
+    service_id: &str,
     config: &ServiceConfig,
     working_dir: &str,
-    cmd: &str,
-    args: &[String],
 ) -> Result<(bool, Option<u32>, String), String> {
-    let arg_list_str = args
-        .iter()
-        .map(|a| format!("'{}'", a.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
-    let ps_script = format!(
-        "$env:ROOT_PATH='{}'; \
-         $env:PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION='python'; \
-         $wd='{}'; $exe='{}'; \
-         $argList=@({}); \
-         $p=Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $wd -PassThru; \
-         Write-Output $p.Id",
-        root_dir.replace('\'', "''"),
-        working_dir.replace('\'', "''"),
-        cmd.replace('\'', "''"),
-        arg_list_str,
+    let _ = app.emit(
+        "service-log",
+        serde_json::json!({
+            "serviceId": service_id,
+            "type": "info",
+            "message": format!("$ {}", config.command)
+        }),
     );
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+    let mut command = std::process::Command::new("cmd");
+    command
+        .args(["/C", &config.command])
         .current_dir(working_dir)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
+        .stderr(Stdio::piped());
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if let Ok(pid) = stdout.parse::<u32>() {
-        if pid > 0 {
-            return Ok((true, Some(pid), format!("{} 已启动 (PID: {})", config.name, pid)));
+    match command.spawn() {
+        Ok(mut child) => {
+            let pid = child.id();
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if !is_process_running(pid).await {
+                return Ok((false, None, "启动失败，进程已退出".to_string()));
+            }
+
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+            let app_out = app.clone();
+            let app_err = app.clone();
+            let sid_out = service_id.to_string();
+            let sid_err = service_id.to_string();
+
+            if let Some(out) = stdout {
+                std::thread::spawn(move || {
+                    let reader = BufReader::new(out);
+                    for line in reader.lines().flatten() {
+                        let _ = app_out.emit(
+                            "service-log",
+                            serde_json::json!({
+                                "serviceId": sid_out,
+                                "type": "info",
+                                "message": line
+                            }),
+                        );
+                    }
+                });
+            }
+
+            if let Some(err) = stderr {
+                std::thread::spawn(move || {
+                    let reader = BufReader::new(err);
+                    for line in reader.lines().flatten() {
+                        let _ = app_err.emit(
+                            "service-log",
+                            serde_json::json!({
+                                "serviceId": sid_err,
+                                "type": "error",
+                                "message": line
+                            }),
+                        );
+                    }
+                });
+            }
+
+            Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
         }
+        Err(e) => Ok((false, None, format!("启动失败: {}", e))),
     }
-    Ok((true, None, format!("{} 已在独立窗口中启动", config.name)))
 }
 
 // ── Stop service ──────────────────────────────────────────────────────
@@ -393,28 +429,10 @@ pub async fn stop_service(
     pids: &mut HashMap<String, u32>,
     pid_file: &str,
 ) -> (bool, String) {
-    let port = config.map(|c| c.port).unwrap_or(0);
-    let mut pid = pids.get(service_id).copied();
-
-    if port > 0 {
-        let port_in_use = is_port_in_use(port).await;
-        if port_in_use {
-            if let Some(port_pid) = get_pid_by_port(port).await {
-                pid = Some(port_pid);
-                pids.insert(service_id.to_string(), port_pid);
-                save_pids(pid_file, pids);
-            }
-        }
-    }
-
-    let pid = match pid {
+    let _ = config;
+    let pid = match pids.get(service_id).copied() {
         Some(p) => p,
-        None => {
-            if port > 0 && is_port_in_use(port).await {
-                return (false, "端口被占用但无法找到进程PID".to_string());
-            }
-            return (true, "服务未运行".to_string());
-        }
+        None => return (true, "服务未运行".to_string()),
     };
 
     if !is_process_running(pid).await {
@@ -442,84 +460,28 @@ pub async fn get_all_status(
 ) -> HashMap<String, ServiceStatus> {
     let mut result = HashMap::new();
 
-    // Collect port-based services and script-based separately
-    let mut port_checks = Vec::new();
-    let mut script_services = Vec::new();
-
+    // Only monitor PID existence (no port probing).
+    // PID source is `pids` loaded from pid_file when the app starts, and updated when start/stop succeeds.
     for config in configs {
-        if config.id == "backend" || config.id == "frontend" || config.id == "wechat" {
-            port_checks.push(config);
-        } else if config.port > 0 {
-            port_checks.push(config);
-        } else {
-            script_services.push(config);
-        }
-    }
-
-    // Check port-based services
-    for config in &port_checks {
-        let port_in_use = is_port_in_use(config.port).await;
-
-        if port_in_use {
-            if let Some(port_pid) = get_pid_by_port(config.port).await {
-                let old_pid = pids.get(&config.id).copied();
-                if old_pid != Some(port_pid) {
-                    pids.insert(config.id.clone(), port_pid);
+        let pid = pids.get(&config.id).copied();
+        let running = match pid {
+            Some(p) => {
+                let r = is_process_running(p).await;
+                if !r {
+                    pids.remove(&config.id);
                     save_pids(pid_file, pids);
                 }
-                result.insert(
-                    config.id.clone(),
-                    ServiceStatus {
-                        running: true,
-                        pid: Some(port_pid),
-                        port: Some(true),
-                    },
-                );
-            } else {
-                let pid = pids.get(&config.id).copied();
-                result.insert(
-                    config.id.clone(),
-                    ServiceStatus {
-                        running: true,
-                        pid,
-                        port: Some(true),
-                    },
-                );
+                r
             }
-        } else {
-            if pids.contains_key(&config.id) {
-                pids.remove(&config.id);
-                save_pids(pid_file, pids);
-            }
-            result.insert(
-                config.id.clone(),
-                ServiceStatus {
-                    running: false,
-                    pid: None,
-                    port: Some(false),
-                },
-            );
-        }
-    }
-
-    // Check script-based services (port == 0, check PID only)
-    for config in &script_services {
-        let pid = pids.get(&config.id).copied();
-        let running = if let Some(p) = pid {
-            let r = is_process_running(p).await;
-            if !r {
-                pids.remove(&config.id);
-                save_pids(pid_file, pids);
-            }
-            r
-        } else {
-            false
+            None => false,
         };
+
         result.insert(
             config.id.clone(),
             ServiceStatus {
                 running,
                 pid: if running { pid } else { None },
+                // We intentionally do not probe ports anymore.
                 port: None,
             },
         );

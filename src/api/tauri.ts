@@ -68,4 +68,9 @@ export const api = {
 
   onWeChatLog: (callback: (msg: string) => void): Promise<UnlistenFn> =>
     listen<string>('wechat-log', (event) => callback(event.payload)),
+
+  onServiceLog: (
+    callback: (payload: { serviceId: string; type: 'info' | 'error'; message: string }) => void,
+  ): Promise<UnlistenFn> =>
+    listen<any>('service-log', (event) => callback(event.payload)),
 };

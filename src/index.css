@@ -161,6 +161,7 @@ body {
   border-bottom: 1px solid var(--sm-border);
   background: #fff;
   min-height: 48px;
+  flex-wrap: wrap;
 }
 
 .sm-toolbar-left {
@@ -168,11 +169,16 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: nowrap;
+  flex-basis: auto;
 }
 
 .sm-toolbar-title {
   font-size: 15px !important;
   margin: 0 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sm-toolbar-tag {
@@ -183,6 +189,9 @@ body {
 
 .sm-toolbar-right {
   flex-shrink: 0;
+  flex-basis: 100%;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .sm-main-body {
@@ -281,4 +290,88 @@ body {
   display: flex;
   gap: 8px;
   z-index: 50;
+}
+
+.sm-app--with-rail .sm-floating-actions {
+  right: 276px;
+}
+
+/* 主界面右侧：完整启动命令（SwitchHosts 式预览栏） */
+.sm-command-rail {
+  width: 260px;
+  min-width: 260px;
+  background: var(--sm-sidebar);
+  border-left: 1px solid var(--sm-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sm-command-rail-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sm-border);
+  background: #fff;
+}
+
+.sm-command-rail-body {
+  flex: 1;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  font-family: 'Cascadia Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--sm-log-fg);
+  background: #fff;
+}
+
+/* 创建/编辑任务：左表单项 + 右命令预览 */
+.sm-task-edit-layout {
+  display: flex;
+  gap: 0;
+  min-height: 280px;
+  margin: -8px 0 0;
+}
+
+.sm-task-edit-form {
+  flex: 1;
+  min-width: 0;
+  padding-right: 16px;
+}
+
+.sm-task-preview-pane {
+  width: 300px;
+  min-width: 300px;
+  border-left: 1px solid var(--sm-border);
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  padding-left: 16px;
+}
+
+.sm-task-preview-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sm-text-secondary);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.sm-task-preview-body {
+  flex: 1;
+  margin: 0;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--sm-border);
+  border-radius: 6px;
+  font-family: 'Cascadia Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--sm-log-fg);
+  min-height: 160px;
+  overflow: auto;
 }
