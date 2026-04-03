@@ -23,6 +23,10 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             label: Windows-x64
+          # 原生 ARM64 Windows 构建（需公开仓库；runner 标签见 GitHub 文档）
+          - platform: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            label: Windows-arm64
 
     runs-on: ${{ matrix.platform }}
     name: Build (${{ matrix.label }})

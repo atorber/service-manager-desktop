@@ -1,6 +1,6 @@
 {
   "name": "service-manager-desktop",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "服务管理器 - Tauri + React 桌面应用",
   "type": "module",
   "scripts": {
