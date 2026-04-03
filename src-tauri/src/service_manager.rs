@@ -261,9 +261,10 @@ async fn start_service_unix(
         }),
     );
 
-    let mut command = std::process::Command::new("sh");
+    let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let mut command = std::process::Command::new(&user_shell);
     command
-        .args(["-c", &config.command])
+        .args(["-l", "-c", &config.command])
         .current_dir(working_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
