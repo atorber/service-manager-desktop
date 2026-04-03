@@ -1,0 +1,28 @@
+{
+  "name": "service-manager-desktop",
+  "version": "1.2.0",
+  "description": "服务管理器 - Tauri + React 桌面应用",
+  "type": "module",
+  "scripts": {
+    "dev": "npx vite",
+    "build": "npx tsc --noEmit && npx vite build",
+    "preview": "npx vite preview",
+    "tauri": "npx tauri"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "antd": "^5.29.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}
