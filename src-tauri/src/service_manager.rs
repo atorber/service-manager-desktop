@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 
 use crate::service_config::ServiceConfig;
 
@@ -180,6 +180,23 @@ pub async fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+/// 子进程无 TTY 时 stdin 若关闭，`input()` / `readline()` 会 EOF。
+/// 通过管道预置换行并周期性补写，避免 Python 等脚本的 EOFError，同时不弹控制台。
+fn spawn_stdin_feeder(mut stdin: std::process::ChildStdin) {
+    std::thread::spawn(move || {
+        let buf = vec![b'\n'; 256 * 1024];
+        if stdin.write_all(&buf).is_err() || stdin.flush().is_err() {
+            return;
+        }
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            if stdin.write_all(&[b'\n'; 4096]).is_err() || stdin.flush().is_err() {
+                break;
+            }
+        }
+    });
+}
+
 fn regex_lite_match(text: &str, pattern: &str) -> bool {
     // Simple word-boundary PID match without regex crate
     let pid_str = pattern.trim_start_matches(r"\b").trim_end_matches(r"\b");
@@ -288,7 +305,7 @@ async fn start_service_unix(
     command
         .args(["-l", "-c", &config.command])
         .current_dir(working_dir)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -316,6 +333,10 @@ async fn start_service_unix(
                     err_msg.trim().to_string()
                 };
                 return Ok((false, None, format!("启动失败: {}", detail)));
+            }
+
+            if let Some(sin) = child.stdin.take() {
+                spawn_stdin_feeder(sin);
             }
 
             let stdout = child.stdout.take();
@@ -383,7 +404,7 @@ async fn start_service_windows(
     command
         .args(["/C", &config.command])
         .current_dir(working_dir)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     command.creation_flags(WIN_CREATE_NEW_PROCESS_GROUP | WIN_CREATE_NO_WINDOW);
@@ -394,6 +415,10 @@ async fn start_service_windows(
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if !is_process_running(pid).await {
                 return Ok((false, None, "启动失败，进程已退出".to_string()));
+            }
+
+            if let Some(sin) = child.stdin.take() {
+                spawn_stdin_feeder(sin);
             }
 
             let stdout = child.stdout.take();
