@@ -1,9 +1,10 @@
 {
   "name": "service-manager-desktop",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "服务管理器 - Tauri + React 桌面应用",
   "type": "module",
   "scripts": {
+    "sync-version": "node scripts/sync-version.mjs",
     "dev": "npx vite",
     "build": "npx tsc --noEmit && npx vite build",
     "preview": "npx vite preview",

@@ -9,6 +9,14 @@ use std::io::{BufRead, BufReader};
 
 use crate::service_config::ServiceConfig;
 
+/// 避免在 GUI 应用里反复拉起控制台子进程时出现 CMD 黑窗闪烁（状态轮询会高频调用 tasklist 等）。
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const WIN_CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(target_os = "windows")]
+const WIN_CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceStatus {
@@ -61,6 +69,7 @@ async fn check_port_by_system_command(port: u16) -> Option<bool> {
         .args(["-ano"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .creation_flags(WIN_CREATE_NO_WINDOW)
         .output()
         .await
         .ok()?;
@@ -113,6 +122,7 @@ pub async fn get_pid_by_port(port: u16) -> Option<u32> {
         .args(["-ano"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .creation_flags(WIN_CREATE_NO_WINDOW)
         .output()
         .await
         .ok()?;
@@ -152,6 +162,7 @@ pub async fn is_process_running(pid: u32) -> bool {
         .args(["/FI", &format!("PID eq {}", pid)])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .creation_flags(WIN_CREATE_NO_WINDOW)
         .output()
         .await;
     match output {
@@ -191,6 +202,7 @@ pub async fn kill_process(pid: u32) -> bool {
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(WIN_CREATE_NO_WINDOW)
         .status()
         .await;
     matches!(result, Ok(s) if s.success())
@@ -358,9 +370,6 @@ async fn start_service_windows(
     config: &ServiceConfig,
     working_dir: &str,
 ) -> Result<(bool, Option<u32>, String), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-
     let _ = app.emit(
         "service-log",
         serde_json::json!({
@@ -377,7 +386,7 @@ async fn start_service_windows(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    command.creation_flags(WIN_CREATE_NEW_PROCESS_GROUP | WIN_CREATE_NO_WINDOW);
 
     match command.spawn() {
         Ok(mut child) => {
