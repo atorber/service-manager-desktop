@@ -36,7 +36,7 @@ pub fn preset_service_configs() -> Vec<ServiceConfig> {
         ServiceConfig {
             id: "backend".into(),
             name: "后端服务".into(),
-            working_dir: "{rootDir}/app".into(),
+            working_dir: "{rootDir}".into(),
             command: "cd /Users/app/ && python main.py".into(),
             port: 5000,
             url_template: Some("http://localhost:{port}/docs".into()),
@@ -60,7 +60,7 @@ pub fn preset_service_configs() -> Vec<ServiceConfig> {
         ServiceConfig {
             id: "wechat".into(),
             name: "微信机器人".into(),
-            working_dir: "{rootDir}/scripts/wxagent".into(),
+            working_dir: "{rootDir}".into(),
             command: "cd /Users/app/ && npm run start".into(),
             port: 19088,
             url_template: None,

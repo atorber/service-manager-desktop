@@ -46,7 +46,7 @@
     "backend": {
       "id": "backend",
       "name": "后端服务",
-      "workingDir": "{rootDir}/app",
+      "workingDir": "{rootDir}",
       "command": "python main.py",
       "port": 5000,
       "urlTemplate": "http://localhost:{port}/docs",
@@ -57,13 +57,14 @@
     "frontend": {
       "id": "frontend",
       "name": "前端服务",
-      "workingDir": "{rootDir}/web-antd",
-      "command": "npm run dev",
+      "workingDir": "{rootDir}",
+      "command": "cd C:\\Users\\tyutl\\Documents\\GitHub\\thsauto\\web-antd\\ && npm run dev",
       "port": 8000,
       "urlTemplate": "http://localhost:{port}",
       "enabled": true,
       "isPreset": true,
-      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+      "createdAt": "2026-04-03T07:06:12.180926+00:00",
+      "updatedAt": "2026-04-07T11:19:05.686657800+00:00"
     }
   }
 }
