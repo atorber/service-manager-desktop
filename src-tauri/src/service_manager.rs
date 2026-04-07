@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 
 use crate::service_config::ServiceConfig;
 
@@ -181,18 +181,12 @@ pub async fn is_process_running(pid: u32) -> bool {
 }
 
 /// 子进程无 TTY 时 stdin 若关闭，`input()` / `readline()` 会 EOF。
-/// 通过管道预置换行并周期性补写，避免 Python 等脚本的 EOFError，同时不弹控制台。
-fn spawn_stdin_feeder(mut stdin: std::process::ChildStdin) {
+/// 这里仅保持 stdin 管道打开（不主动写入），避免脚本被“自动回车”影响控制流。
+fn spawn_stdin_keeper(stdin: std::process::ChildStdin) {
     std::thread::spawn(move || {
-        let buf = vec![b'\n'; 256 * 1024];
-        if stdin.write_all(&buf).is_err() || stdin.flush().is_err() {
-            return;
-        }
+        let _hold = stdin;
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(30));
-            if stdin.write_all(&[b'\n'; 4096]).is_err() || stdin.flush().is_err() {
-                break;
-            }
+            std::thread::sleep(std::time::Duration::from_secs(3600));
         }
     });
 }
@@ -336,7 +330,7 @@ async fn start_service_unix(
             }
 
             if let Some(sin) = child.stdin.take() {
-                spawn_stdin_feeder(sin);
+                spawn_stdin_keeper(sin);
             }
 
             let stdout = child.stdout.take();
@@ -414,11 +408,21 @@ async fn start_service_windows(
             let pid = child.id();
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if !is_process_running(pid).await {
-                return Ok((false, None, "启动失败，进程已退出".to_string()));
+                let mut err_msg = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    use std::io::Read;
+                    let _ = stderr.read_to_string(&mut err_msg);
+                }
+                let detail = if err_msg.trim().is_empty() {
+                    "进程启动后立即退出".to_string()
+                } else {
+                    err_msg.trim().to_string()
+                };
+                return Ok((false, None, format!("启动失败: {}", detail)));
             }
 
             if let Some(sin) = child.stdin.take() {
-                spawn_stdin_feeder(sin);
+                spawn_stdin_keeper(sin);
             }
 
             let stdout = child.stdout.take();

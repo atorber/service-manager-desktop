@@ -1,6 +1,6 @@
 {
   "name": "service-manager-desktop",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "服务管理器 - Tauri + React 桌面应用",
   "type": "module",
   "scripts": {
@@ -8,7 +8,8 @@
     "dev": "npx vite",
     "build": "npx tsc --noEmit && npx vite build",
     "preview": "npx vite preview",
-    "tauri": "npx tauri"
+    "tauri": "npx tauri",
+    "release": "git tag v$npm_package_version && git push origin v$npm_package_version"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
