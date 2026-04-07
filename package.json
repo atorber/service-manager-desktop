@@ -9,7 +9,7 @@
     "build": "npx tsc --noEmit && npx vite build",
     "preview": "npx vite preview",
     "tauri": "npx tauri",
-    "release": "git tag v$npm_package_version && git push origin v$npm_package_version"
+    "release": "node -e \"const v='v'+require('./package.json').version;require('child_process').execSync('git tag '+v+' && git push origin '+v,{stdio:'inherit'})\""
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
