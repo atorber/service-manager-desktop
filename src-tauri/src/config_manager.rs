@@ -41,24 +41,11 @@ impl ConfigManager {
                 // New format: has "services" field
                 if loaded.get("services").is_some() {
                     if let Ok(mut cfg) = serde_json::from_str::<ServicesConfig>(&data) {
-                        let script_preset_ids = ["weibo_update", "qwen_voice_to_text"];
                         let mut has_new = false;
                         for preset in preset_service_configs() {
                             if !cfg.services.contains_key(&preset.id) {
                                 cfg.services.insert(preset.id.clone(), preset);
                                 has_new = true;
-                            } else if script_preset_ids.contains(&preset.id.as_str()) {
-                                if let Some(existing) = cfg.services.get(&preset.id) {
-                                    if existing.working_dir != preset.working_dir
-                                        || existing.command != preset.command
-                                    {
-                                        let mut updated = existing.clone();
-                                        updated.working_dir = preset.working_dir.clone();
-                                        updated.command = preset.command.clone();
-                                        cfg.services.insert(preset.id.clone(), updated);
-                                        has_new = true;
-                                    }
-                                }
                             }
                         }
                         if has_new {

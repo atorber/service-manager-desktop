@@ -1,36 +1,5 @@
 {
   "services": {
-    "weibo_update": {
-      "id": "weibo_update",
-      "name": "微博更新到数据库",
-      "workingDir": "{rootDir}",
-      "command": "cd /Users/app/ && python app/tools/update_weibo.py",
-      "port": 0,
-      "enabled": true,
-      "isPreset": true,
-      "createdAt": "2026-04-03T07:06:12.180926+00:00"
-    },
-    "frontend": {
-      "id": "frontend",
-      "name": "前端服务",
-      "workingDir": "{rootDir}/web-antd",
-      "command": "npm run dev",
-      "port": 8000,
-      "urlTemplate": "http://localhost:{port}",
-      "enabled": true,
-      "isPreset": true,
-      "createdAt": "2026-04-03T07:06:12.180926+00:00"
-    },
-    "qwen_voice_to_text": {
-      "id": "qwen_voice_to_text",
-      "name": "千问语音转文本",
-      "workingDir": "{rootDir}",
-      "command": "cd /Users/app/ && python app/tools/chrome_test_weibo_qwen.py",
-      "port": 0,
-      "enabled": true,
-      "isPreset": true,
-      "createdAt": "2026-04-03T07:06:12.180926+00:00"
-    },
     "wechat": {
       "id": "wechat",
       "name": "微信机器人",
@@ -40,6 +9,28 @@
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    },
+    "weibo_update": {
+      "id": "weibo_update",
+      "name": "微博更新到数据库",
+      "workingDir": "{rootDir}",
+      "command": "cd C:\\Users\\tyutl\\Documents\\GitHub\\thsauto && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\update_weibo.py",
+      "port": 0,
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00",
+      "updatedAt": "2026-04-07T10:49:23.862195900+00:00"
+    },
+    "qwen_voice_to_text": {
+      "id": "qwen_voice_to_text",
+      "name": "千问语音转文本",
+      "workingDir": "{rootDir}",
+      "command": "cd C:\\Users\\tyutl\\Documents\\GitHub\\thsauto && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\chrome_test_weibo_qwen.py",
+      "port": 0,
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00",
+      "updatedAt": "2026-04-07T10:18:59.534806500+00:00"
     },
     "task_1775200250780_18a2aef6670153b8": {
       "id": "task_1775200250780_18a2aef6670153b8",
@@ -59,6 +50,17 @@
       "command": "python main.py",
       "port": 5000,
       "urlTemplate": "http://localhost:{port}/docs",
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00"
+    },
+    "frontend": {
+      "id": "frontend",
+      "name": "前端服务",
+      "workingDir": "{rootDir}/web-antd",
+      "command": "npm run dev",
+      "port": 8000,
+      "urlTemplate": "http://localhost:{port}",
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00"

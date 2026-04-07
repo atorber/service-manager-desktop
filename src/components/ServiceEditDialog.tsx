@@ -10,7 +10,7 @@ const DEFAULT_WORKING_DIR = '{rootDir}';
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onSave: (serviceData: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onSave: (serviceData: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'>) => Promise<boolean>;
   editService?: ServiceConfig | null;
 }
 
@@ -35,6 +35,7 @@ const ServiceEditDialog: React.FC<Props> = ({ visible, onClose, onSave, editServ
     try {
       const values = await form.validateFields();
 
+      let saved = false;
       if (editService) {
         const serviceData: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'> = {
           name: values.name,
@@ -44,7 +45,7 @@ const ServiceEditDialog: React.FC<Props> = ({ visible, onClose, onSave, editServ
           urlTemplate: editService.urlTemplate,
           enabled: editService.enabled ?? true,
         };
-        onSave(serviceData);
+        saved = await onSave(serviceData);
       } else {
         const serviceData: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'> = {
           name: values.name,
@@ -53,11 +54,13 @@ const ServiceEditDialog: React.FC<Props> = ({ visible, onClose, onSave, editServ
           port: 0,
           enabled: true,
         };
-        onSave(serviceData);
+        saved = await onSave(serviceData);
       }
 
-      onClose();
-      form.resetFields();
+      if (saved) {
+        onClose();
+        form.resetFields();
+      }
     } catch (error: any) {
       if (error?.errorFields) return;
       message.error('提交失败: ' + error.message);

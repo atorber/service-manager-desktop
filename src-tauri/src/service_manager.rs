@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 
 use crate::service_config::ServiceConfig;
 
@@ -202,6 +202,41 @@ fn regex_lite_match(text: &str, pattern: &str) -> bool {
     false
 }
 
+/// 从子进程的 stdout/stderr 读取输出并通过 Tauri 事件推送到前端。
+/// 使用 `read_until` + `from_utf8_lossy` 而非 `lines().flatten()`，
+/// 以正确处理中文 Windows 下 GBK 编码的管道输出。
+fn spawn_output_reader(
+    output: impl std::io::Read + Send + 'static,
+    app: AppHandle,
+    service_id: String,
+    log_type: &'static str,
+) {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(output);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let line = String::from_utf8_lossy(&buf).trim_end().to_string();
+                    if !line.is_empty() {
+                        let _ = app.emit(
+                            "service-log",
+                            serde_json::json!({
+                                "serviceId": service_id,
+                                "type": log_type,
+                                "message": line
+                            }),
+                        );
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
 // ── Kill process ──────────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
@@ -299,6 +334,9 @@ async fn start_service_unix(
     command
         .args(["-l", "-c", &config.command])
         .current_dir(working_dir)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -333,43 +371,11 @@ async fn start_service_unix(
                 spawn_stdin_keeper(sin);
             }
 
-            let stdout = child.stdout.take();
-            let stderr = child.stderr.take();
-            let app_out = app.clone();
-            let app_err = app.clone();
-            let sid_out = service_id.to_string();
-            let sid_err = service_id.to_string();
-
-            if let Some(out) = stdout {
-                std::thread::spawn(move || {
-                    let reader = BufReader::new(out);
-                    for line in reader.lines().flatten() {
-                        let _ = app_out.emit(
-                            "service-log",
-                            serde_json::json!({
-                                "serviceId": sid_out,
-                                "type": "info",
-                                "message": line
-                            }),
-                        );
-                    }
-                });
+            if let Some(out) = child.stdout.take() {
+                spawn_output_reader(out, app.clone(), service_id.to_string(), "info");
             }
-
-            if let Some(err) = stderr {
-                std::thread::spawn(move || {
-                    let reader = BufReader::new(err);
-                    for line in reader.lines().flatten() {
-                        let _ = app_err.emit(
-                            "service-log",
-                            serde_json::json!({
-                                "serviceId": sid_err,
-                                "type": "error",
-                                "message": line
-                            }),
-                        );
-                    }
-                });
+            if let Some(err) = child.stderr.take() {
+                spawn_output_reader(err, app.clone(), service_id.to_string(), "error");
             }
 
             Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
@@ -398,6 +404,9 @@ async fn start_service_windows(
     command
         .args(["/C", &config.command])
         .current_dir(working_dir)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -425,43 +434,11 @@ async fn start_service_windows(
                 spawn_stdin_keeper(sin);
             }
 
-            let stdout = child.stdout.take();
-            let stderr = child.stderr.take();
-            let app_out = app.clone();
-            let app_err = app.clone();
-            let sid_out = service_id.to_string();
-            let sid_err = service_id.to_string();
-
-            if let Some(out) = stdout {
-                std::thread::spawn(move || {
-                    let reader = BufReader::new(out);
-                    for line in reader.lines().flatten() {
-                        let _ = app_out.emit(
-                            "service-log",
-                            serde_json::json!({
-                                "serviceId": sid_out,
-                                "type": "info",
-                                "message": line
-                            }),
-                        );
-                    }
-                });
+            if let Some(out) = child.stdout.take() {
+                spawn_output_reader(out, app.clone(), service_id.to_string(), "info");
             }
-
-            if let Some(err) = stderr {
-                std::thread::spawn(move || {
-                    let reader = BufReader::new(err);
-                    for line in reader.lines().flatten() {
-                        let _ = app_err.emit(
-                            "service-log",
-                            serde_json::json!({
-                                "serviceId": sid_err,
-                                "type": "error",
-                                "message": line
-                            }),
-                        );
-                    }
-                });
+            if let Some(err) = child.stderr.take() {
+                spawn_output_reader(err, app.clone(), service_id.to_string(), "error");
             }
 
             Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
