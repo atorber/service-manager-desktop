@@ -221,22 +221,25 @@ function App() {
     }
   };
 
-  const handleCreateService = async (data: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleCreateService = async (data: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
     try {
       const result = await api.config.createService(data);
       if (result.success) {
         message.success('任务创建成功');
         await loadAllServices();
+        return true;
       } else {
         message.error('任务创建失败: ' + (result.message || '未知错误'));
+        return false;
       }
     } catch (error: any) {
       message.error('任务创建异常: ' + error.message);
+      return false;
     }
   };
 
-  const handleUpdateService = async (data: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (!editService) return;
+  const handleUpdateService = async (data: Omit<ServiceConfig, 'id' | 'createdAt' | 'updatedAt'>): Promise<boolean> => {
+    if (!editService) return false;
     try {
       const result = await api.config.updateService(editService.id, data);
       if (result.success) {
@@ -244,11 +247,14 @@ function App() {
         await loadAllServices();
         setShowServiceEdit(false);
         setEditService(null);
+        return true;
       } else {
         message.error('任务更新失败: ' + (result.message || '未知错误'));
+        return false;
       }
     } catch (error: any) {
       message.error('任务更新异常: ' + error.message);
+      return false;
     }
   };
 
