@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 
 use crate::service_config::ServiceConfig;
 

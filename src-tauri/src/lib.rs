@@ -401,7 +401,7 @@ fn get_root_dir_dev() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let root_dir = if cfg!(debug_assertions) {
@@ -439,12 +439,6 @@ pub fn run() {
                 }
             }
         })
-        .on_exit(|app_handle| {
-            // Also cleanup on process exit (covers non-window exit paths).
-            if let Some(state) = app_handle.try_state::<Mutex<AppState>>() {
-                tauri::async_runtime::spawn(cleanup_all_started_processes(state));
-            }
-        })
         .invoke_handler(tauri::generate_handler![
             start_service,
             stop_service,
@@ -466,6 +460,15 @@ pub fn run() {
             open_external,
             open_logs_dir,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        // Ensure best-effort cleanup on all exit paths.
+        if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            if let Some(state) = app_handle.try_state::<Mutex<AppState>>() {
+                tauri::async_runtime::spawn(cleanup_all_started_processes(state));
+            }
+        }
+    });
 }
