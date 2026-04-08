@@ -19,6 +19,34 @@ pub struct AppState {
     pid_file: String,
 }
 
+fn merge_pid_snapshot(
+    current: &mut HashMap<String, u32>,
+    before: &HashMap<String, u32>,
+    after: &HashMap<String, u32>,
+) {
+    // Apply updates derived from the snapshot while preserving concurrent writes.
+    for (k, before_v) in before {
+        match after.get(k) {
+            Some(after_v) => {
+                current.insert(k.clone(), *after_v);
+            }
+            None => {
+                // Remove only if key wasn't concurrently changed since snapshot.
+                if current.get(k).copied() == Some(*before_v) {
+                    current.remove(k);
+                }
+            }
+        }
+    }
+
+    // Add keys discovered during status refresh (e.g. pid backfill by port).
+    for (k, v) in after {
+        if !before.contains_key(k) {
+            current.insert(k.clone(), *v);
+        }
+    }
+}
+
 async fn cleanup_all_started_processes(state: Arc<Mutex<AppState>>) {
     let (pid_file, mut pids) = {
         let s = state.lock().await;
@@ -92,14 +120,15 @@ async fn stop_service_inner(
         )
     };
 
-    let mut pids = { state.lock().await.pids.clone() };
+    let before_pids = { state.lock().await.pids.clone() };
+    let mut pids = before_pids.clone();
 
     let (success, message) =
         service_manager::stop_service(service, config.as_ref(), &mut pids, &pid_file).await;
 
     {
         let mut s = state.lock().await;
-        s.pids = pids;
+        merge_pid_snapshot(&mut s.pids, &before_pids, &pids);
     }
 
     Ok(json!({"success": success, "message": message}))
@@ -132,14 +161,15 @@ async fn get_service_status(
         let s = state.lock().await;
         (s.config_manager.get_all_services(), s.pid_file.clone())
     };
-    let mut pids = { state.lock().await.pids.clone() };
+    let before_pids = { state.lock().await.pids.clone() };
+    let mut pids = before_pids.clone();
 
     let status =
         service_manager::get_all_status(&configs, &mut pids, &pid_file).await;
 
     {
         let mut s = state.lock().await;
-        s.pids = pids;
+        merge_pid_snapshot(&mut s.pids, &before_pids, &pids);
     }
 
     Ok(json!({"success": true, "data": status}))
