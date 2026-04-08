@@ -5,7 +5,7 @@ mod wechat_api;
 
 use config_manager::ConfigManager;
 use serde_json::json;
-use service_manager::{load_pids, save_pids};
+use service_manager::{kill_process, load_pids, save_pids};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -16,6 +16,25 @@ pub struct AppState {
     config_manager: ConfigManager,
     pids: HashMap<String, u32>,
     pid_file: String,
+}
+
+async fn cleanup_all_started_processes(state: tauri::State<'_, Mutex<AppState>>) {
+    let (pid_file, mut pids) = {
+        let s = state.lock().await;
+        (s.pid_file.clone(), s.pids.clone())
+    };
+
+    // Best-effort: kill everything we started, then clear pid file.
+    for (_service_id, pid) in pids.clone() {
+        let _ = kill_process(pid).await;
+    }
+    pids.clear();
+    save_pids(&pid_file, &pids);
+
+    {
+        let mut s = state.lock().await;
+        s.pids = pids;
+    }
 }
 
 // ── Service management commands ───────────────────────────────────────
@@ -397,6 +416,21 @@ pub fn run() {
                 pid_file,
             }));
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // When user closes the main window, stop all services started by this app.
+            // We use best-effort cleanup and do not block the UI thread.
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                if let Some(state) = window.try_state::<Mutex<AppState>>() {
+                    tauri::async_runtime::spawn(cleanup_all_started_processes(state));
+                }
+            }
+        })
+        .on_exit(|app_handle| {
+            // Also cleanup on process exit (covers non-window exit paths).
+            if let Some(state) = app_handle.try_state::<Mutex<AppState>>() {
+                tauri::async_runtime::spawn(cleanup_all_started_processes(state));
+            }
         })
         .invoke_handler(tauri::generate_handler![
             start_service,
