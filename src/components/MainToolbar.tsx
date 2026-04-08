@@ -55,6 +55,9 @@ const MainToolbar: React.FC<Props> = ({
         <Typography.Text strong className="sm-toolbar-title">
           {title}
         </Typography.Text>
+        <Typography.Text type="secondary" className="sm-toolbar-version">
+          v{__APP_VERSION__}
+        </Typography.Text>
         {subtitle && (
           <Tag className="sm-toolbar-tag" color="default">
             {subtitle}
