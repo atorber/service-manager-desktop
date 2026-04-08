@@ -589,7 +589,7 @@ pub async fn get_all_status(
     // PID source is `pids` loaded from pid_file when the app starts, and updated when start/stop succeeds.
     for config in configs {
         let pid = pids.get(&config.id).copied();
-        let mut running = match pid {
+        let running = match pid {
             Some(p) => {
                 let r = is_process_running(p).await;
                 if !r {
@@ -600,20 +600,7 @@ pub async fn get_all_status(
             }
             None => false,
         };
-        let mut final_pid = if running { pid } else { None };
-
-        // Generic fallback: if pid is missing/stale but configured port is listening,
-        // recover status and refresh tracked pid by port.
-        if !running && config.port > 0 {
-            if is_port_in_use(config.port).await {
-                running = true;
-                final_pid = get_pid_by_port(config.port).await;
-                if let Some(p) = final_pid {
-                    pids.insert(config.id.clone(), p);
-                    save_pids(pid_file, pids);
-                }
-            }
-        }
+        let final_pid = if running { pid } else { None };
 
         result.insert(
             config.id.clone(),
