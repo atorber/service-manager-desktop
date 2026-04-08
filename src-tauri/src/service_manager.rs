@@ -9,6 +9,38 @@ use std::io::{BufRead, BufReader, Read};
 
 use crate::service_config::ServiceConfig;
 
+fn parse_leading_cd_dir(cmd: &str) -> Option<String> {
+    // Very small parser for commands like:
+    // - cd C:\path\to\dir\ && npm run start
+    // - cd "C:\path with spaces" && npm run start
+    // - cd /Users/app && npm run dev
+    let s = cmd.trim_start();
+    if s.len() < 3 {
+        return None;
+    }
+    let lower = s.to_ascii_lowercase();
+    if !lower.starts_with("cd ") {
+        return None;
+    }
+    let mut rest = s[3..].trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+    let dir = if rest.starts_with('"') {
+        rest = &rest[1..];
+        let end = rest.find('"')?;
+        rest[..end].to_string()
+    } else {
+        let end = rest.find("&&").unwrap_or(rest.len());
+        rest[..end].trim().to_string()
+    };
+    if dir.is_empty() {
+        None
+    } else {
+        Some(dir)
+    }
+}
+
 /// 避免在 GUI 应用里反复拉起控制台子进程时出现 CMD 黑窗闪烁（状态轮询会高频调用 tasklist 等）。
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -293,23 +325,47 @@ pub async fn start_service(
         }
     }
 
-    if !PathBuf::from(working_dir).exists() {
-        return Ok((false, None, format!("工作目录不存在: {}", working_dir)));
-    }
-
     let cmd_str = config.command.trim();
     if cmd_str.is_empty() {
         return Ok((false, None, "启动命令为空".to_string()));
     }
 
+    let wd_exists = PathBuf::from(working_dir).exists();
+    let cd_dir = parse_leading_cd_dir(cmd_str);
+    let cd_dir_exists = cd_dir
+        .as_deref()
+        .is_some_and(|d| PathBuf::from(d).exists());
+
+    // Prefer `working_dir` if it exists. If it doesn't, but the command starts with `cd <dir>`,
+    // allow starting and optionally use that directory as `current_dir`.
+    let effective_working_dir: Option<String> = if wd_exists {
+        Some(working_dir.to_string())
+    } else if cd_dir_exists {
+        cd_dir
+    } else {
+        None
+    };
+
+    if effective_working_dir.is_none() && !wd_exists {
+        return Ok((
+            false,
+            None,
+            format!(
+                "工作目录不存在: {}（且命令未提供可用的 cd 目录）",
+                working_dir
+            ),
+        ));
+    }
+
     #[cfg(target_os = "windows")]
     {
-        return start_service_windows(&app, service_id, config, working_dir).await;
+        return start_service_windows(&app, service_id, config, effective_working_dir.as_deref())
+            .await;
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        start_service_unix(&app, service_id, config, working_dir).await
+        start_service_unix(&app, service_id, config, effective_working_dir.as_deref()).await
     }
 }
 
@@ -318,7 +374,7 @@ async fn start_service_unix(
     app: &AppHandle,
     service_id: &str,
     config: &ServiceConfig,
-    working_dir: &str,
+    working_dir: Option<&str>,
 ) -> Result<(bool, Option<u32>, String), String> {
     let _ = app.emit(
         "service-log",
@@ -333,13 +389,15 @@ async fn start_service_unix(
     let mut command = std::process::Command::new(&user_shell);
     command
         .args(["-l", "-c", &config.command])
-        .current_dir(working_dir)
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(wd) = working_dir {
+        command.current_dir(wd);
+    }
 
     unsafe {
         use std::os::unix::process::CommandExt;
@@ -354,15 +412,31 @@ async fn start_service_unix(
             let pid = child.id();
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if !is_process_running(pid).await {
+                let exit_status = child.try_wait().ok().flatten();
+                let exit_code = exit_status.and_then(|s| s.code());
+                let exit_code_str = exit_code
+                    .map(|c| format!(" (exit code: {})", c))
+                    .unwrap_or_default();
+                let mut out_msg = String::new();
                 let mut err_msg = String::new();
+                if let Some(mut stdout) = child.stdout.take() {
+                    use std::io::Read;
+                    let _ = stdout.read_to_string(&mut out_msg);
+                }
                 if let Some(mut stderr) = child.stderr.take() {
                     use std::io::Read;
                     let _ = stderr.read_to_string(&mut err_msg);
                 }
-                let detail = if err_msg.trim().is_empty() {
-                    "进程启动后立即退出".to_string()
+                let out = out_msg.trim();
+                let err = err_msg.trim();
+                let detail = if out.is_empty() && err.is_empty() {
+                    format!("进程启动后立即退出{}", exit_code_str)
+                } else if !err.is_empty() && !out.is_empty() {
+                    format!("{}{}\n{}", err, exit_code_str, out)
+                } else if !err.is_empty() {
+                    format!("{}{}", err, exit_code_str)
                 } else {
-                    err_msg.trim().to_string()
+                    format!("{}{}", out, exit_code_str)
                 };
                 return Ok((false, None, format!("启动失败: {}", detail)));
             }
@@ -389,7 +463,7 @@ async fn start_service_windows(
     app: &AppHandle,
     service_id: &str,
     config: &ServiceConfig,
-    working_dir: &str,
+    working_dir: Option<&str>,
 ) -> Result<(bool, Option<u32>, String), String> {
     let _ = app.emit(
         "service-log",
@@ -403,13 +477,15 @@ async fn start_service_windows(
     let mut command = std::process::Command::new("cmd");
     command
         .args(["/C", &config.command])
-        .current_dir(working_dir)
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(wd) = working_dir {
+        command.current_dir(wd);
+    }
     command.creation_flags(WIN_CREATE_NEW_PROCESS_GROUP | WIN_CREATE_NO_WINDOW);
 
     match command.spawn() {
@@ -417,15 +493,31 @@ async fn start_service_windows(
             let pid = child.id();
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if !is_process_running(pid).await {
+                let mut out_msg = String::new();
                 let mut err_msg = String::new();
+                let exit_status = child.try_wait().ok().flatten();
+                let exit_code = exit_status.and_then(|s| s.code());
+                let exit_code_str = exit_code
+                    .map(|c| format!(" (exit code: {})", c))
+                    .unwrap_or_default();
+                if let Some(mut stdout) = child.stdout.take() {
+                    use std::io::Read;
+                    let _ = stdout.read_to_string(&mut out_msg);
+                }
                 if let Some(mut stderr) = child.stderr.take() {
                     use std::io::Read;
                     let _ = stderr.read_to_string(&mut err_msg);
                 }
-                let detail = if err_msg.trim().is_empty() {
-                    "进程启动后立即退出".to_string()
+                let out = out_msg.trim();
+                let err = err_msg.trim();
+                let detail = if out.is_empty() && err.is_empty() {
+                    format!("进程启动后立即退出{}", exit_code_str)
+                } else if !err.is_empty() && !out.is_empty() {
+                    format!("{}{}\n{}", err, exit_code_str, out)
+                } else if !err.is_empty() {
+                    format!("{}{}", err, exit_code_str)
                 } else {
-                    err_msg.trim().to_string()
+                    format!("{}{}", out, exit_code_str)
                 };
                 return Ok((false, None, format!("启动失败: {}", detail)));
             }

@@ -1,36 +1,26 @@
 {
   "services": {
-    "wechat": {
-      "id": "wechat",
-      "name": "微信机器人",
-      "workingDir": "{rootDir}/scripts/wxagent",
-      "command": "npm run start",
-      "port": 19088,
-      "enabled": true,
-      "isPreset": true,
-      "createdAt": "2026-04-03T07:06:12.180926+00:00"
-    },
     "weibo_update": {
       "id": "weibo_update",
       "name": "微博更新到数据库",
       "workingDir": "{rootDir}",
-      "command": "cd C:\\Users\\tyutl\\Documents\\GitHub\\thsauto && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\update_weibo.py",
+      "command": "cd C:\\GitHub\\easy-auto\\app\\web-antd && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\update_weibo.py",
       "port": 0,
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
-      "updatedAt": "2026-04-07T10:49:23.862195900+00:00"
+      "updatedAt": "2026-04-08T06:03:10.744945300+00:00"
     },
-    "qwen_voice_to_text": {
-      "id": "qwen_voice_to_text",
-      "name": "千问语音转文本",
-      "workingDir": "{rootDir}",
-      "command": "cd C:\\Users\\tyutl\\Documents\\GitHub\\thsauto && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\chrome_test_weibo_qwen.py",
-      "port": 0,
+    "wechat": {
+      "id": "wechat",
+      "name": "微信机器人",
+      "workingDir": "{rootDir}/scripts/wxagent",
+      "command": "cd C:\\GitHub\\frida-agent\\agent\\ && npm run start",
+      "port": 19088,
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
-      "updatedAt": "2026-04-07T10:18:59.534806500+00:00"
+      "updatedAt": "2026-04-08T05:56:41.482568800+00:00"
     },
     "task_1775200250780_18a2aef6670153b8": {
       "id": "task_1775200250780_18a2aef6670153b8",
@@ -43,28 +33,40 @@
       "createdAt": "2026-04-03T07:10:50.780934+00:00",
       "updatedAt": "2026-04-03T08:35:40.508112+00:00"
     },
-    "backend": {
-      "id": "backend",
-      "name": "后端服务",
-      "workingDir": "{rootDir}",
-      "command": "python main.py",
-      "port": 5000,
-      "urlTemplate": "http://localhost:{port}/docs",
-      "enabled": true,
-      "isPreset": true,
-      "createdAt": "2026-04-03T07:06:12.180926+00:00"
-    },
     "frontend": {
       "id": "frontend",
       "name": "前端服务",
       "workingDir": "{rootDir}",
-      "command": "cd C:\\Users\\tyutl\\Documents\\GitHub\\thsauto\\web-antd\\ && npm run dev",
+      "command": "cd C:\\GitHub\\easy-auto\\web-antd\\ && npm run dev",
       "port": 8000,
       "urlTemplate": "http://localhost:{port}",
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
-      "updatedAt": "2026-04-07T11:19:05.686657800+00:00"
+      "updatedAt": "2026-04-08T05:50:09.928821+00:00"
+    },
+    "backend": {
+      "id": "backend",
+      "name": "后端服务",
+      "workingDir": "{rootDir}",
+      "command": "cd C:\\GitHub\\easy-auto\\app\\ && python main.py",
+      "port": 5000,
+      "urlTemplate": "http://localhost:{port}/docs",
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00",
+      "updatedAt": "2026-04-08T05:53:54.329160600+00:00"
+    },
+    "qwen_voice_to_text": {
+      "id": "qwen_voice_to_text",
+      "name": "千问语音转文本",
+      "workingDir": "{rootDir}",
+      "command": "cd C:\\GitHub\\easy-auto\\ && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\chrome_test_weibo_qwen.py",
+      "port": 0,
+      "enabled": true,
+      "isPreset": true,
+      "createdAt": "2026-04-03T07:06:12.180926+00:00",
+      "updatedAt": "2026-04-08T06:02:57.975066200+00:00"
     }
   }
 }
