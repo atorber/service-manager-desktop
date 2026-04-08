@@ -212,17 +212,6 @@ pub async fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-/// 子进程无 TTY 时 stdin 若关闭，`input()` / `readline()` 会 EOF。
-/// 这里仅保持 stdin 管道打开（不主动写入），避免脚本被“自动回车”影响控制流。
-fn spawn_stdin_keeper(stdin: std::process::ChildStdin) {
-    std::thread::spawn(move || {
-        let _hold = stdin;
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(3600));
-        }
-    });
-}
-
 fn regex_lite_match(text: &str, pattern: &str) -> bool {
     // Simple word-boundary PID match without regex crate
     let pid_str = pattern.trim_start_matches(r"\b").trim_end_matches(r"\b");
@@ -392,7 +381,7 @@ async fn start_service_unix(
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(wd) = working_dir {
@@ -441,10 +430,6 @@ async fn start_service_unix(
                 return Ok((false, None, format!("启动失败: {}", detail)));
             }
 
-            if let Some(sin) = child.stdin.take() {
-                spawn_stdin_keeper(sin);
-            }
-
             if let Some(out) = child.stdout.take() {
                 spawn_output_reader(out, app.clone(), service_id.to_string(), "info");
             }
@@ -480,7 +465,7 @@ async fn start_service_windows(
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(wd) = working_dir {
@@ -520,10 +505,6 @@ async fn start_service_windows(
                     format!("{}{}", out, exit_code_str)
                 };
                 return Ok((false, None, format!("启动失败: {}", detail)));
-            }
-
-            if let Some(sin) = child.stdin.take() {
-                spawn_stdin_keeper(sin);
             }
 
             if let Some(out) = child.stdout.take() {
