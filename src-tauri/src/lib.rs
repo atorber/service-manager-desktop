@@ -8,6 +8,7 @@ use serde_json::json;
 use service_manager::{is_process_running, kill_process, load_pids, save_pids};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
@@ -18,13 +19,12 @@ pub struct AppState {
     pid_file: String,
 }
 
-async fn cleanup_all_started_processes(state: tauri::State<'_, Mutex<AppState>>) {
+async fn cleanup_all_started_processes(state: Arc<Mutex<AppState>>) {
     let (pid_file, mut pids) = {
         let s = state.lock().await;
         (s.pid_file.clone(), s.pids.clone())
     };
 
-    // Best-effort: kill everything we started, then clear pid file.
     for (_service_id, pid) in pids.clone() {
         let _ = kill_process(pid).await;
     }
@@ -42,7 +42,7 @@ async fn cleanup_all_started_processes(state: tauri::State<'_, Mutex<AppState>>)
 #[tauri::command]
 async fn start_service(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service: String,
 ) -> Result<serde_json::Value, String> {
     let (config, working_dir) = {
@@ -81,7 +81,7 @@ async fn start_service(
 }
 
 async fn stop_service_inner(
-    state: &Mutex<AppState>,
+    state: &Arc<Mutex<AppState>>,
     service: &str,
 ) -> Result<serde_json::Value, String> {
     let (config, pid_file) = {
@@ -107,7 +107,7 @@ async fn stop_service_inner(
 
 #[tauri::command]
 async fn stop_service(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service: String,
 ) -> Result<serde_json::Value, String> {
     stop_service_inner(&*state, &service).await
@@ -116,7 +116,7 @@ async fn stop_service(
 #[tauri::command]
 async fn restart_service(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service: String,
 ) -> Result<serde_json::Value, String> {
     let _ = stop_service_inner(&*state, &service).await;
@@ -126,7 +126,7 @@ async fn restart_service(
 
 #[tauri::command]
 async fn get_service_status(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let (configs, pid_file) = {
         let s = state.lock().await;
@@ -150,21 +150,21 @@ async fn get_service_status(
 #[tauri::command]
 async fn start_wechat(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     start_service(app, state, "wechat".to_string()).await
 }
 
 #[tauri::command]
 async fn stop_wechat(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     stop_service(state, "wechat".to_string()).await
 }
 
 #[tauri::command]
 async fn get_wechat_status(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let (port, pid, pid_file) = {
         let s = state.lock().await;
@@ -208,7 +208,7 @@ async fn get_wechat_status(
 
 #[tauri::command]
 async fn check_wechat_api_health(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let port = {
         let s = state.lock().await;
@@ -223,7 +223,7 @@ async fn check_wechat_api_health(
 
 #[tauri::command]
 async fn get_wechat_push_config(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let port = {
         let s = state.lock().await;
@@ -238,7 +238,7 @@ async fn get_wechat_push_config(
 
 #[tauri::command]
 async fn set_wechat_push_config(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     enabled: bool,
     callback_url: String,
 ) -> Result<serde_json::Value, String> {
@@ -259,7 +259,7 @@ async fn set_wechat_push_config(
 
 #[tauri::command]
 async fn get_all_config(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().await;
     let config = s.config_manager.get_all_config();
@@ -268,7 +268,7 @@ async fn get_all_config(
 
 #[tauri::command]
 async fn get_all_services(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().await;
     let services = s.config_manager.get_all_services();
@@ -277,7 +277,7 @@ async fn get_all_services(
 
 #[tauri::command]
 async fn get_service_config(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service_id: String,
 ) -> Result<serde_json::Value, String> {
     let s = state.lock().await;
@@ -289,7 +289,7 @@ async fn get_service_config(
 
 #[tauri::command]
 async fn create_service(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service_data: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().await;
@@ -301,7 +301,7 @@ async fn create_service(
 
 #[tauri::command]
 async fn update_service(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service_id: String,
     updates: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -314,7 +314,7 @@ async fn update_service(
 
 #[tauri::command]
 async fn delete_service(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
     service_id: String,
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().await;
@@ -327,7 +327,7 @@ async fn delete_service(
 
 #[tauri::command]
 async fn reset_defaults(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let mut s = state.lock().await;
     if s.config_manager.reset_to_defaults() {
@@ -347,7 +347,7 @@ async fn open_external(url: String) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn open_logs_dir(
-    state: tauri::State<'_, Mutex<AppState>>,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     let logs_dir = {
         let s = state.lock().await;
@@ -422,19 +422,18 @@ pub fn run() {
             let pids = load_pids(&pid_file);
             let config_manager = ConfigManager::new(&root_dir);
 
-            app.manage(Mutex::new(AppState {
+            app.manage(Arc::new(Mutex::new(AppState {
                 root_dir,
                 config_manager,
                 pids,
                 pid_file,
-            }));
+            })));
             Ok(())
         })
         .on_window_event(|window, event| {
-            // When user closes the main window, stop all services started by this app.
-            // We use best-effort cleanup and do not block the UI thread.
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                if let Some(state) = window.try_state::<Mutex<AppState>>() {
+                if let Some(state) = window.try_state::<Arc<Mutex<AppState>>>() {
+                    let state = Arc::clone(&state);
                     tauri::async_runtime::spawn(cleanup_all_started_processes(state));
                 }
             }
@@ -464,9 +463,9 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // Ensure best-effort cleanup on all exit paths.
         if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
-            if let Some(state) = app_handle.try_state::<Mutex<AppState>>() {
+            if let Some(state) = app_handle.try_state::<Arc<Mutex<AppState>>>() {
+                let state = Arc::clone(&state);
                 tauri::async_runtime::spawn(cleanup_all_started_processes(state));
             }
         }
