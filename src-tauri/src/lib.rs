@@ -5,7 +5,7 @@ mod wechat_api;
 
 use config_manager::ConfigManager;
 use serde_json::json;
-use service_manager::{is_process_running, kill_process, load_pids, save_pids};
+use service_manager::{kill_process, load_pids, save_pids};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -160,50 +160,6 @@ async fn stop_wechat(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<serde_json::Value, String> {
     stop_service(state, "wechat".to_string()).await
-}
-
-#[tauri::command]
-async fn get_wechat_status(
-    state: tauri::State<'_, Arc<Mutex<AppState>>>,
-) -> Result<serde_json::Value, String> {
-    let (port, pid, pid_file) = {
-        let s = state.lock().await;
-        let port = s
-            .config_manager
-            .get_service_config("wechat")
-            .map(|c| c.port)
-            .unwrap_or(19088);
-        let pid = s.pids.get("wechat").copied();
-        (port, pid, s.pid_file.clone())
-    };
-
-    let running = match pid {
-        Some(p) => is_process_running(p).await,
-        None => false,
-    };
-
-    // If pid is stale, cleanup pid tracking (unified with other services).
-    if !running {
-        let mut s = state.lock().await;
-        if s.pids.remove("wechat").is_some() {
-            save_pids(&pid_file, &s.pids);
-        }
-    }
-
-    let mut api_health = false;
-    if running {
-        api_health = wechat_api::check_api_health(port).await;
-    }
-
-    let pid = if running { pid } else { None };
-    Ok(json!({
-        "success": true,
-        "data": {
-            "running": running,
-            "pid": pid,
-            "apiHealth": api_health,
-        }
-    }))
 }
 
 #[tauri::command]
@@ -445,7 +401,6 @@ pub fn run() {
             get_service_status,
             start_wechat,
             stop_wechat,
-            get_wechat_status,
             check_wechat_api_health,
             get_wechat_push_config,
             set_wechat_push_config,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Modal, message, Typography, Button, ConfigProvider, theme, Space } from 'antd';
 import { ExclamationCircleOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api } from './api/tauri';
 import type { ServiceConfig } from './types';
 import ServiceSidebar from './components/ServiceSidebar';
@@ -38,8 +39,6 @@ function App() {
   const [showServiceEdit, setShowServiceEdit] = useState(false);
   const [editService, setEditService] = useState<ServiceConfig | null>(null);
   const [logDrawerId, setLogDrawerId] = useState<string | null>(null);
-
-  const wechatStatusFetchInProgress = useRef(false);
 
   const addLog = (msg: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', serviceId?: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -134,38 +133,6 @@ function App() {
       }
     } catch (error: any) {
       addLog(`获取状态失败: ${error.message}`, 'error');
-    }
-  };
-
-  const fetchWeChatStatus = async () => {
-    if (wechatStatusFetchInProgress.current) return;
-    wechatStatusFetchInProgress.current = true;
-    try {
-      const statusResult = await api.serviceManager.status();
-      if (statusResult.success && statusResult.data && (statusResult.data as any).wechat) {
-        const wechatStatus = (statusResult.data as any).wechat;
-        let apiHealth = false;
-        if (wechatStatus.running) {
-          try {
-            const healthResult = await api.wechatBot.checkApiHealth();
-            apiHealth = healthResult.success && healthResult.health === true;
-          } catch {
-            /* ignore */
-          }
-        }
-        setServiceState((prev) => ({
-          ...prev,
-          wechat: {
-            running: wechatStatus.running || false,
-            pid: wechatStatus.pid,
-            apiHealth,
-          },
-        }));
-      }
-    } finally {
-      setTimeout(() => {
-        wechatStatusFetchInProgress.current = false;
-      }, 100);
     }
   };
 
@@ -291,6 +258,14 @@ function App() {
   const unlistenServiceLog = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
+    const globalTitle = `服务管理器 v${__APP_VERSION__}`;
+    document.title = globalTitle;
+    getCurrentWindow().setTitle(globalTitle).catch(() => {
+      // Ignore in non-tauri contexts.
+    });
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       addLog('正在初始化服务管理器...', 'info');
@@ -328,11 +303,8 @@ function App() {
   useEffect(() => {
     if (!ready) return;
     fetchStatus();
-    let tick = 0;
     const interval = setInterval(() => {
-      tick++;
       fetchStatus();
-      if (tick % 2 === 0) fetchWeChatStatus();
     }, 2000);
     return () => clearInterval(interval);
   }, [ready]);
@@ -345,7 +317,7 @@ function App() {
       ? selected.urlTemplate.replace('{port}', String(selected.port))
       : null;
 
-  const canRestart = selected ? selected.id !== 'wechat' && running : false;
+  const canRestart = running;
   const fullCommand = selected?.command?.trim() ? selected.command : null;
 
   return (
@@ -384,12 +356,10 @@ function App() {
             onRestart={() => selected && restartService(selected.id)}
             onRefresh={() => {
               fetchStatus();
-              fetchWeChatStatus();
             }}
             onOpenLogsDir={async () => {
               await api.openLogsDir();
             }}
-            onWeChatConfig={() => setShowWeChatConfig(true)}
             onOpenUrl={(u) => api.openExternal(u)}
             url={url}
           />
@@ -477,7 +447,7 @@ function App() {
           isOpen={showWeChatConfig}
           onStart={() => startService('wechat')}
           onStop={() => stopService('wechat')}
-          onRefresh={fetchWeChatStatus}
+          onRefresh={fetchStatus}
           addLog={addLog}
           onClose={() => setShowWeChatConfig(false)}
         />

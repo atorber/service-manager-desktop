@@ -5,11 +5,9 @@ import {
   ReloadOutlined,
   FolderOpenOutlined,
   SyncOutlined,
-  SettingOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Space, Typography, Tag } from 'antd';
-import type { MenuProps } from 'antd';
+import { Button, Space, Typography, Tag } from 'antd';
 import type { ServiceConfig } from '../types';
 
 interface Props {
@@ -23,7 +21,6 @@ interface Props {
   onRestart: () => void;
   onRefresh: () => void;
   onOpenLogsDir: () => void;
-  onWeChatConfig: () => void;
   onOpenUrl?: (url: string) => void;
   url?: string | null;
 }
@@ -39,24 +36,14 @@ const MainToolbar: React.FC<Props> = ({
   onRestart,
   onRefresh,
   onOpenLogsDir,
-  onWeChatConfig,
   onOpenUrl,
   url,
 }) => {
-  const moreItems: MenuProps['items'] = [
-    ...(selectedService?.id === 'wechat'
-      ? [{ key: 'wx', label: '微信推送配置', onClick: onWeChatConfig }]
-      : []),
-  ];
-
   return (
     <header className="sm-toolbar">
       <div className="sm-toolbar-left">
         <Typography.Text strong className="sm-toolbar-title">
           {title}
-        </Typography.Text>
-        <Typography.Text type="secondary" className="sm-toolbar-version">
-          v{__APP_VERSION__}
         </Typography.Text>
         {subtitle && (
           <Tag className="sm-toolbar-tag" color="default">
@@ -100,11 +87,6 @@ const MainToolbar: React.FC<Props> = ({
           <Button size="small" icon={<FolderOpenOutlined />} onClick={onOpenLogsDir}>
             日志目录
           </Button>
-          {selectedService && (
-            <Dropdown menu={{ items: moreItems }} trigger={['click']}>
-              <Button size="small" icon={<SettingOutlined />} />
-            </Dropdown>
-          )}
         </Space>
       </div>
     </header>

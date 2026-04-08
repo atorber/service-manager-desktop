@@ -430,6 +430,14 @@ async fn start_service_unix(
                 return Ok((false, None, format!("启动失败: {}", detail)));
             }
 
+            // For shell-wrapped commands (e.g. `npm run dev`), child pid may be a wrapper process.
+            // Prefer tracking the actual listener PID when a service port is configured.
+            let tracked_pid = if config.port > 0 {
+                get_pid_by_port(config.port).await.or(Some(pid))
+            } else {
+                Some(pid)
+            };
+
             if let Some(out) = child.stdout.take() {
                 spawn_output_reader(out, app.clone(), service_id.to_string(), "info");
             }
@@ -437,7 +445,12 @@ async fn start_service_unix(
                 spawn_output_reader(err, app.clone(), service_id.to_string(), "error");
             }
 
-            Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
+            let shown_pid = tracked_pid.unwrap_or(pid);
+            Ok((
+                true,
+                tracked_pid,
+                format!("{} 启动成功 (PID: {})", config.name, shown_pid),
+            ))
         }
         Err(e) => Ok((false, None, format!("启动失败: {}", e))),
     }
@@ -507,6 +520,14 @@ async fn start_service_windows(
                 return Ok((false, None, format!("启动失败: {}", detail)));
             }
 
+            // For shell-wrapped commands (e.g. `npm run dev`), child pid may be a wrapper process.
+            // Prefer tracking the actual listener PID when a service port is configured.
+            let tracked_pid = if config.port > 0 {
+                get_pid_by_port(config.port).await.or(Some(pid))
+            } else {
+                Some(pid)
+            };
+
             if let Some(out) = child.stdout.take() {
                 spawn_output_reader(out, app.clone(), service_id.to_string(), "info");
             }
@@ -514,7 +535,12 @@ async fn start_service_windows(
                 spawn_output_reader(err, app.clone(), service_id.to_string(), "error");
             }
 
-            Ok((true, Some(pid), format!("{} 启动成功 (PID: {})", config.name, pid)))
+            let shown_pid = tracked_pid.unwrap_or(pid);
+            Ok((
+                true,
+                tracked_pid,
+                format!("{} 启动成功 (PID: {})", config.name, shown_pid),
+            ))
         }
         Err(e) => Ok((false, None, format!("启动失败: {}", e))),
     }
@@ -563,7 +589,7 @@ pub async fn get_all_status(
     // PID source is `pids` loaded from pid_file when the app starts, and updated when start/stop succeeds.
     for config in configs {
         let pid = pids.get(&config.id).copied();
-        let running = match pid {
+        let mut running = match pid {
             Some(p) => {
                 let r = is_process_running(p).await;
                 if !r {
@@ -574,12 +600,26 @@ pub async fn get_all_status(
             }
             None => false,
         };
+        let mut final_pid = if running { pid } else { None };
+
+        // Generic fallback: if pid is missing/stale but configured port is listening,
+        // recover status and refresh tracked pid by port.
+        if !running && config.port > 0 {
+            if is_port_in_use(config.port).await {
+                running = true;
+                final_pid = get_pid_by_port(config.port).await;
+                if let Some(p) = final_pid {
+                    pids.insert(config.id.clone(), p);
+                    save_pids(pid_file, pids);
+                }
+            }
+        }
 
         result.insert(
             config.id.clone(),
             ServiceStatus {
                 running,
-                pid: if running { pid } else { None },
+                pid: final_pid,
                 // We intentionally do not probe ports anymore.
                 port: None,
             },
