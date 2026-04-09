@@ -1,83 +1,122 @@
-# Service Manager Desktop
+# Service Manager Desktop (本地服务与脚本管理器)
 
-服务管理器 (Service Manager Desktop) 是一个基于 [Tauri](https://tauri.app/) + [React](https://reactjs.org/) + [Ant Design](https://ant.design/) 构建的跨平台桌面应用，用于管理和监控多个后台服务或脚本任务。界面风格参考 SwitchHosts，左侧任务列表 + 右侧命令预览。
+Service Manager Desktop 是一款基于 [Tauri](https://tauri.app/) + [React](https://reactjs.org/) + [Ant Design](https://ant.design/) 构建的跨平台桌面应用。它的设计初衷是解决开发者在日常开发和运维过程中面临的**“终端标签页地狱”**与**“环境碎片化”**问题。
 
-通过类似 SwitchHosts 的简洁界面设计，开发者和运维人员可以将其用作日常环境切换、自动化脚本运行与微服务管理的得力助手。不仅适用于开发阶段快速启停前端与后端工程，也适合本地自动化部署测试场景。
+本项目汲取了 **SwitchHosts** 在环境配置切换上的极简理念，将**多服务进程管理、复合脚本自动化执行、实时日志隔离追踪**整合到一个统一的图形化控制台中。让你能够像切换 Hosts 一样，优雅地切换和管理复杂的本地开发环境与自动化任务。
 
-## 主要功能与使用场景
+---
 
-- **任务与服务管理**：界面左侧提供类似 SwitchHosts 的服务列表，支持快速切换、编辑和删除（包括自定义与预置任务）。创建任务只需填写「名称 + 启动命令」，适合管理各种构建进程、静态服务器或开发环境。
-- **Shell 直接执行**：启动命令通过 `sh -c`（macOS/Linux）或 `cmd /C`（Windows）直接执行，支持 `cd ... && npm run dev` 等复合命令，无需额外拼接环境变量。
-- **实时日志追踪**：捕获子进程的 stdout/stderr，通过 Tauri 事件实时推送到前端日志面板，体验接近原生终端，排查问题非常直观。
-- **进程状态监控**：基于 PID 实时检测进程状态，支持一键启动、停止、重启单个或“全栈”服务，极大简化了多服务开发调试流程。
-- **独立日志抽屉**：每个任务有独立的日志记录，可在抽屉面板中查看完整历史，方便回溯错误日志或历史输出。
-- **微信机器人扩展**：内置微信机器人控制面板，支持启停、API 健康检查和消息推送配置。
+## 🎯 痛点与解决场景
 
-## 技术栈
+在现代软件开发中，启动一个完整的本地开发环境往往需要打开多个终端窗口：
+1. `npm run dev` 启动前端 Vite/Webpack 服务器；
+2. `go run main.go` 或 `mvn spring-boot:run` 启动后端 API；
+3. `docker-compose up` 启动 Redis/MySQL 依赖；
+4. 运行某些数据同步或监听脚本。
 
-- **前端**：React 18 + Ant Design 5 + Vite + TypeScript
-- **后端**：Tauri 2 + Rust
-- **通信**：Tauri Commands（前端调后端）+ Tauri Events（后端推前端日志）
+**Service Manager Desktop 解决的核心问题：**
+- **告别终端乱象**：无需再面对密密麻麻的终端 Tab，所有服务的启停状态一目了然。
+- **防止进程残留**：基于 PID 的精准监控与退出机制，避免由于忘记关闭终端导致的端口被占用 (EADDRINUSE) 问题。
+- **环境一键切换**：通过预配不同的服务配置，轻松在“开发环境”、“测试环境”之间一键切换（一键全栈启停）。
 
-## 快速开始
+---
 
-### 环境要求
+## 🚀 核心功能能力
 
+### 1. 极简任务与服务管理 (SwitchHosts 风格)
+- **直观列表面板**：左侧提供服务任务列表，右侧为命令配置与实时状态预览。
+- **极速创建**：创建新任务无需繁琐配置，只需填写「任务名称」和「启动命令」。
+- **复合脚本支持**：支持原生 Shell 的强大表达能力。启动命令通过底层 `sh -c` (macOS/Linux) 或 `cmd /C` (Windows) 直接执行。例如：你可以直接输入 `cd ~/my-project && export NODE_ENV=dev && npm run start`，无需手动拼接跨平台环境变量。
+
+### 2. 进程级生命周期控制
+- **精准 PID 追踪**：服务启动后，后端 Tauri Rust 进程会捕获真实的子进程 PID，并进行定时轮询。即使应用被最小化，也能准确感知进程意外退出。
+- **一键启停与重载**：支持针对单个微服务或脚本的「启动」、「停止」和「重启」。
+- **全栈模式**：提供一键「全栈启动/停止」能力，适合每天早上打开电脑，一键拉起所有依赖环境。
+
+### 3. 实时日志隔离追踪
+- **终端级体验**：后台捕获子进程的 `stdout` 和 `stderr` 流，通过 Tauri IPC 事件实时推送到前端面板，无刷新延迟。
+- **日志隔离**：每个任务配置独立的日志流。你可以一边查看后端报错日志，一边在抽屉面板中单独查看前端打包的编译输出，互相不干扰。
+- **历史留存**：提供全局操作日志台以及独立的日志抽屉，方便回溯错误堆栈和历史控制台输出。
+
+### 4. 内置微信机器人控制中枢 (特性扩展)
+- **开箱即用**：内置对微信自动化机器人的生命周期控制。
+- **健康检查**：定时心跳检测机器人 API 健康状态，并在前端给出可视化的状态灯提示。
+
+---
+
+## 💻 典型使用场景
+
+1. **前后端分离本地开发**
+   - 任务 A: 前端项目 (`cd web && npm run dev`)
+   - 任务 B: 后端服务 (`cd server && cargo run`)
+   - **效果**：左右分栏查看日志，一键启动全栈。
+2. **自动化脚本与工具箱**
+   - 配置常用的 Python 数据处理脚本或 Node.js 爬虫脚本。无需每次打开终端寻找历史命令，在面板中点击“启动”即可，并直观观察执行日志。
+3. **本地微服务集群模拟**
+   - 当需要同时启动 Auth、User、Payment 多个微服务实例时，Service Manager 能够帮你将不同端口的服务井井有条地管理起来。
+
+---
+
+## 🛠 技术栈架构
+
+项目采用了目前最为流行的现代化跨平台桌面应用架构：
+
+- **前端交互**：React 18 + TypeScript + Vite，配合 Ant Design 5 提供专业级的企业后台管理 UI 体验。
+- **桌面内核层**：Tauri 2 (Rust) 替代 Electron。体积更小，内存占用极低，且具有极高的安全性。
+- **通信机制**：
+  - **命令调用**：`Tauri Commands` 用于前端触发后端的进程启停、文件读写操作。
+  - **状态推送**：`Tauri Events` 用于后端 Rust 异步将日志流和 PID 状态实时广播给前端，保证界面与底层状态的强一致性。
+
+---
+
+## 📦 快速开始与部署
+
+### 1. 环境准备
 - Node.js >= 18
-- Rust + Cargo
-- Tauri 构建依赖（参考 [Tauri 文档](https://tauri.app/start/prerequisites/)）
+- Rust 工具链 (配合 Cargo)
+- Tauri 原生构建依赖（如 macOS 的 Xcode Command Line Tools，Windows 的 C++ Build Tools，参考 [Tauri 官方指南](https://tauri.app/start/prerequisites/)）
 
-### 安装依赖
+### 2. 安装与开发运行
 
 ```bash
+# 1. 克隆并安装前端依赖
 npm install
-```
 
-### 开发模式
-
-```bash
+# 2. 启动开发模式 (自动拉起 Vite 前端与 Tauri 窗口)
 npm run tauri dev
 ```
 
-或使用 npm 提供的脚本（如果配置支持）：
-```bash
-npm run dev
-```
-
-### 构建打包
-
-构建生产版本的桌面应用：
+### 3. 构建生产版本
 
 ```bash
-npm run build
+# 构建对应的操作系统安装包 (dmg, exe, AppImage 等)
 npm run tauri build
 ```
+构建的二进制产物将输出在 `src-tauri/target/release` 目录下。
 
-构建产物位于 `src-tauri/target/release` 目录。
+---
 
-## 项目结构
+## 📂 核心项目结构指北
 
-```
-src/                        # 前端 React 源码
-├── api/tauri.ts            # Tauri 后端 API 封装
+了解核心代码布局，便于二次开发和定制你的专属管理器：
+
+```text
+src/                        # 前端 React 源码，负责所有 UI 表现
+├── api/tauri.ts            # Tauri IPC 接口封装 (前后端桥梁)
 ├── components/
-│   ├── ServiceSidebar.tsx   # 左侧任务列表
-│   ├── MainToolbar.tsx      # 工具栏（启动/停止/重启/刷新等）
-│   ├── ServiceEditDialog.tsx# 创建/编辑任务弹窗
-│   ├── LogConsole.tsx       # 日志控制台
-│   ├── ServiceLogDrawer.tsx # 独立日志抽屉
-│   └── WeChatBotControls.tsx# 微信机器人控制面板
-├── App.tsx                  # 主应用入口
-└── types.ts                 # 类型定义
+│   ├── ServiceSidebar.tsx   # 左侧导航与任务列表组件
+│   ├── MainToolbar.tsx      # 顶部控制台 (全栈启停、刷新等核心交互)
+│   ├── LogConsole.tsx       # 终端风格日志输出台
+│   └── ServiceLogDrawer.tsx # 侧边栏独立日志抽屉
+└── App.tsx                  # 核心状态机 (管理服务 running, pid 等)
 
-src-tauri/src/               # Rust 后端源码
-├── lib.rs                   # Tauri 命令注册与调度
-├── service_manager.rs       # 服务启停、状态检测、日志推送
-├── service_config.rs        # 预置任务与配置结构
-├── config_manager.rs        # 配置文件读写管理
-└── wechat_api.rs            # 微信机器人 API
+src-tauri/src/               # 后端 Rust 源码，负责系统级能力
+├── lib.rs                   # Tauri Application 入口与路由注册
+├── service_manager.rs       # 核心模块：进程 Spawn、管道读取、PID 状态机
+├── config_manager.rs        # 负责持久化用户自定义的命令和任务配置
+└── wechat_api.rs            # 微信机器人特性的集成
 ```
 
-## 许可
+## 📄 许可协议
 
-本项目采用开源许可协议，详见 [LICENSE](LICENSE)。
+本项目采用开源许可协议，详情请查看 [LICENSE](LICENSE) 文件。
