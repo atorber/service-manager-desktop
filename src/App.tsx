@@ -1,100 +1,70 @@
-import { useState, useEffect, useRef } from 'react';
-import { Modal, message, Typography, Button, ConfigProvider, theme, Space } from 'antd';
-import { ExclamationCircleOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import React, { useEffect, useState, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { message } from 'antd';
 import { api } from './api/tauri';
 import type { ServiceConfig } from './types';
-import ServiceSidebar from './components/ServiceSidebar';
-import MainToolbar from './components/MainToolbar';
-import LogConsole from './components/LogConsole';
-import WeChatBotControls from './components/WeChatBotControls';
-import ServiceLogDrawer from './components/ServiceLogDrawer';
-import ServiceEditDialog from './components/ServiceEditDialog';
+import type { ServiceStateItem } from './components/layout/ServiceSidebar';
 
-interface ServiceState {
-  backend: { running: boolean; pid?: number; port: boolean };
-  frontend: { running: boolean; pid?: number; port: boolean };
-  wechat: { running: boolean; pid?: number; apiHealth?: boolean; port?: boolean };
-  [key: string]: { running: boolean; pid?: number; port?: boolean; apiHealth?: boolean } | undefined;
-}
-
-interface LogEntry {
-  timestamp: string;
-  message: string;
-  type: 'info' | 'success' | 'error' | 'warning';
-}
+// Layout & Views
+import BaseLayout from './components/layout/BaseLayout';
+import type { ViewType } from './components/layout/Sidebar';
+import DashboardView from './components/views/DashboardView';
+import CreateServiceView from './components/views/CreateServiceView';
+import SettingsView from './components/views/SettingsView';
+import ServiceDetailsView from './components/views/ServiceDetailsView';
 
 function App() {
-  const [serviceState, setServiceState] = useState<ServiceState>({
-    backend: { running: false, port: false },
-    frontend: { running: false, port: false },
-    wechat: { running: false },
-  });
+  const [ready, setReady] = useState(false);
   const [allServices, setAllServices] = useState<ServiceConfig[]>([]);
-  const [serviceLogs, setServiceLogs] = useState<Record<string, LogEntry[]>>({});
-  const [globalLogs, setGlobalLogs] = useState<string[]>([]);
+  const [serviceState, setServiceState] = useState<Record<string, ServiceStateItem | undefined>>({});
+
+  // Navigation State
+  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
-  const [ready, setReady] = useState(true);
-  const [showWeChatConfig, setShowWeChatConfig] = useState(false);
-  const [showServiceEdit, setShowServiceEdit] = useState(false);
+
+  // Edit State
   const [editService, setEditService] = useState<ServiceConfig | null>(null);
-  const [logDrawerId, setLogDrawerId] = useState<string | null>(null);
 
-  const addLog = (msg: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', serviceId?: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    const logEntry: LogEntry = { timestamp, message: msg, type };
-    const logPrefix =
-      type === 'error' ? '[ERROR]' : type === 'success' ? '[SUCCESS]' : type === 'warning' ? '[WARNING]' : '[INFO]';
-    const globalLogMessage = `${timestamp} ${logPrefix} ${msg}`;
+  // Logs state
+  const [globalLogs, setGlobalLogs] = useState<string[]>([]);
+  const [serviceLogs, setServiceLogs] = useState<Record<string, Array<{ type: 'info' | 'error' | 'warn'; text: string; timestamp: number }>>>({});
 
-    setGlobalLogs((prev) => [...prev, globalLogMessage].slice(-500));
+  const MAX_LOGS = 500;
 
+  const addLog = (text: string, type: 'info' | 'error' | 'warn' = 'info', serviceId?: string) => {
+    const ts = Date.now();
     if (serviceId) {
-      setServiceLogs((prev) => ({
-        ...prev,
-        [serviceId]: [...(prev[serviceId] || []), logEntry],
-      }));
+      setServiceLogs((prev) => {
+        const arr = prev[serviceId] || [];
+        const next = [...arr, { type, text, timestamp: ts }];
+        if (next.length > MAX_LOGS) next.shift();
+        return { ...prev, [serviceId]: next };
+      });
+      // also forward service logs to global minimally
+      setGlobalLogs((prev) => {
+        const next = [...prev, `[${serviceId}] ${text}`];
+        if (next.length > MAX_LOGS) next.shift();
+        return next;
+      });
     } else {
-      let inferred: string | null = null;
-      if (msg.includes('后端') || msg.includes('backend')) inferred = 'backend';
-      else if (msg.includes('前端') || msg.includes('frontend')) inferred = 'frontend';
-      else if (msg.includes('微信') || msg.includes('wechat')) inferred = 'wechat';
-      if (inferred) {
-        setServiceLogs((prev) => ({
-          ...prev,
-          [inferred]: [...(prev[inferred] || []), logEntry],
-        }));
-      }
+      setGlobalLogs((prev) => {
+        const next = [...prev, text];
+        if (next.length > MAX_LOGS) next.shift();
+        return next;
+      });
     }
   };
-
-  const formatLogEntry = (l: LogEntry) => {
-    const prefix =
-      l.type === 'error'
-        ? '[ERROR]'
-        : l.type === 'success'
-          ? '[SUCCESS]'
-          : l.type === 'warning'
-            ? '[WARNING]'
-            : '[INFO]';
-    return `${l.timestamp} ${prefix} ${l.message}`;
-  };
-
-  const formatLogsForConsole = (logs: LogEntry[]) => logs.map(formatLogEntry);
 
   const loadAllServices = async () => {
     try {
       const result = await api.config.getAllServices();
       if (result.success && result.data) {
-        const list = result.data as ServiceConfig[];
-        setAllServices(list);
-        setSelectedServiceId((sel) => {
-          if (sel && list.some((s) => s.id === sel)) return sel;
-          return list[0]?.id ?? null;
-        });
+        setAllServices(result.data);
+      } else {
+        addLog(`加载服务配置失败: ${result.message}`, 'error');
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error: any) {
+      addLog(`加载服务配置异常: ${error.message}`, 'error');
     }
   };
 
@@ -102,34 +72,8 @@ function App() {
     try {
       const result = await api.serviceManager.status();
       if (result.success && result.data) {
-        const data = result.data as Record<string, { running: boolean; pid?: number; port?: boolean }>;
-        setServiceState((prev) => {
-          const next: ServiceState = {} as ServiceState;
-          Object.keys(data).forEach((id) => {
-            const item = data[id];
-            next[id] = item ? { ...item, port: item.port ?? false } : { running: false, port: false };
-          });
-          next.backend = next.backend ?? { running: false, port: false };
-          next.frontend = next.frontend ?? { running: false, port: false };
-          next.wechat = next.wechat
-            ? { ...(prev.wechat || {}), ...next.wechat, port: next.wechat.port ?? false }
-            : (prev.wechat ?? { running: false });
-
-          if (next.wechat?.running) {
-            api.wechatBot.checkApiHealth().then((healthResult: any) => {
-              if (healthResult.success) {
-                setServiceState((current) => ({
-                  ...current,
-                  wechat: {
-                    ...(current.wechat || {}),
-                    apiHealth: healthResult.health === true,
-                  },
-                }));
-              }
-            });
-          }
-          return next;
-        });
+         setServiceState(result.data);
+         setReady(true);
       }
     } catch (error: any) {
       addLog(`获取状态失败: ${error.message}`, 'error');
@@ -142,9 +86,8 @@ function App() {
     try {
       const result = await api.serviceManager.start(svc);
       if (result.success) {
-        addLog(`${svc}服务启动成功`, 'success', serviceId);
+        addLog(`${svc}服务已启动`, 'info', serviceId);
         addLog(result.message, 'info', serviceId);
-        setServiceState((prev) => ({ ...prev, [svc]: { running: true, pid: undefined } }));
       } else {
         addLog(`${svc}服务启动失败: ${result.message}`, 'error', serviceId);
       }
@@ -160,7 +103,7 @@ function App() {
     try {
       const result = await api.serviceManager.stop(svc);
       if (result.success) {
-        addLog(`${svc}服务已停止`, 'success', serviceId);
+        addLog(`${svc}服务已停止`, 'info', serviceId);
         addLog(result.message, 'info', serviceId);
       } else {
         addLog(`${svc}服务停止失败: ${result.message}`, 'error', serviceId);
@@ -177,7 +120,7 @@ function App() {
     try {
       const result = await api.serviceManager.restart(svc);
       if (result.success) {
-        addLog(`${svc}服务重启成功`, 'success', serviceId);
+        addLog(`${svc}服务重启成功`, 'info', serviceId);
         addLog(result.message, 'info', serviceId);
       } else {
         addLog(`${svc}服务重启失败: ${result.message}`, 'error', serviceId);
@@ -212,7 +155,6 @@ function App() {
       if (result.success) {
         message.success('任务更新成功');
         await loadAllServices();
-        setShowServiceEdit(false);
         setEditService(null);
         return true;
       } else {
@@ -225,44 +167,32 @@ function App() {
     }
   };
 
-  const handleEditService = (service: ServiceConfig) => {
-    setEditService(service);
-    setShowServiceEdit(true);
-  };
-
-  const handleDeleteService = (serviceId: string, serviceName: string) => {
-    Modal.confirm({
-      title: '确认删除',
-      icon: <ExclamationCircleOutlined />,
-      content: `确定要删除任务 "${serviceName}" 吗？此操作不可撤销。`,
-      okText: '删除',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: async () => {
+  const handleDeleteService = async (serviceId: string) => {
+    if (window.confirm(`确定要删除任务吗？此操作不可撤销。`)) {
         try {
           const result = await api.config.deleteService(serviceId);
           if (result.success) {
             message.success('任务已删除');
             await loadAllServices();
+            if (selectedServiceId === serviceId) {
+                setSelectedServiceId(null);
+            }
           } else {
             message.error('删除失败: ' + (result.message || '未知错误'));
           }
         } catch (error: any) {
           message.error('删除异常: ' + error.message);
         }
-      },
-    });
+    }
   };
 
   const unlistenWechatLog = useRef<(() => void) | undefined>(undefined);
   const unlistenServiceLog = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
-    const globalTitle = `服务管理器 v${__APP_VERSION__}`;
+    const globalTitle = `Service Manager v${__APP_VERSION__}`;
     document.title = globalTitle;
-    getCurrentWindow().setTitle(globalTitle).catch(() => {
-      // Ignore in non-tauri contexts.
-    });
+    getCurrentWindow().setTitle(globalTitle).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -274,21 +204,17 @@ function App() {
         await fetchStatus();
         addLog('已加载服务状态', 'info');
         try {
-          const u = await api.onWeChatLog((msg) => addLog(msg, 'info'));
+          const u = await api.onWeChatLog((msg: string) => addLog(msg, 'info'));
           if (!cancelled) unlistenWechatLog.current = u;
-        } catch {
-          /* 后端未发 wechat-log 事件时可忽略 */
-        }
+        } catch {}
 
         try {
-          const u = await api.onServiceLog((payload) => {
+          const u = await api.onServiceLog((payload: any) => {
             const type = payload.type === 'error' ? 'error' : 'info';
             addLog(payload.message, type, payload.serviceId);
           });
           if (!cancelled) unlistenServiceLog.current = u;
-        } catch {
-          /* ignore */
-        }
+        } catch {}
       } catch {
         addLog('初始化失败', 'error');
       }
@@ -309,173 +235,101 @@ function App() {
     return () => clearInterval(interval);
   }, [ready]);
 
-  const selected = allServices.find((s) => s.id === selectedServiceId) || null;
-  const st = selectedServiceId ? serviceState[selectedServiceId] : undefined;
-  const running = st?.running ?? false;
-  const url =
-    selected?.urlTemplate && running
-      ? selected.urlTemplate.replace('{port}', String(selected.port))
-      : null;
 
-  const canRestart = running;
-  const fullCommand = selected?.command?.trim() ? selected.command : null;
+  const renderMainContent = () => {
+    // If we are showing a specific service details
+    if (selectedServiceId && currentView === 'dashboard') {
+      const selected = allServices.find(s => s.id === selectedServiceId);
+      if (selected) {
+         return (
+           <ServiceDetailsView
+             service={selected}
+             state={serviceState[selected.id]}
+             logs={serviceLogs[selected.id] || []}
+             onStart={() => startService(selected.id)}
+             onStop={() => stopService(selected.id)}
+             onRestart={() => restartService(selected.id)}
+             onEdit={() => {
+                setEditService(selected);
+                setCurrentView('create');
+             }}
+             onDelete={() => handleDeleteService(selected.id)}
+             onOpenLogsDir={() => api.openLogsDir()}
+             onClearLogs={() => setServiceLogs(prev => ({ ...prev, [selected.id]: [] }))}
+           />
+         );
+      }
+    }
+
+    // Default Views mapping
+    switch (currentView) {
+      case 'dashboard':
+        return (
+          <DashboardView
+            services={allServices}
+            serviceState={serviceState}
+            onStartService={startService}
+            onStopService={stopService}
+            onRestartService={restartService}
+            onViewLogs={(id) => {
+              setSelectedServiceId(id);
+            }}
+            globalLogs={globalLogs}
+            onCreateNew={() => setCurrentView('create')}
+          />
+        );
+      case 'create':
+        return (
+          <CreateServiceView
+            editService={editService}
+            onSave={editService ? handleUpdateService : handleCreateService}
+            onCancel={() => {
+              setEditService(null);
+              setCurrentView('dashboard');
+            }}
+          />
+        );
+      case 'logs':
+        return (
+          <div className="p-10 text-on-surface">
+            <div className="flex justify-between items-center mb-4">
+                <h1 className="text-3xl font-bold font-headline">全局日志</h1>
+                <button onClick={() => setGlobalLogs([])} className="hover:text-primary transition-colors flex items-center gap-1 text-sm text-slate-500">
+                    <span className="material-symbols-outlined text-sm">delete</span> 清空当前
+                </button>
+            </div>
+            <div className="bg-surface-container-low p-6 rounded-xl font-mono text-sm max-h-[70vh] overflow-y-auto">
+               {globalLogs.map((log, i) => <div key={i}>{log}</div>)}
+               {globalLogs.length === 0 && <span className="text-slate-500">暂无日志</span>}
+            </div>
+          </div>
+        );
+      case 'settings':
+        return <SettingsView />;
+      default:
+        return null;
+    }
+  };
+
+  const handleViewChange = (view: ViewType) => {
+    if (view === 'dashboard' && selectedServiceId) {
+      // Clear selection if clicking dashboard again
+      setSelectedServiceId(null);
+    }
+    if (view === 'create') {
+      setEditService(null);
+    }
+    setCurrentView(view);
+  };
 
   return (
-    <ConfigProvider
-      theme={{
-        algorithm: theme.defaultAlgorithm,
-        token: {
-          colorPrimary: '#1677ff',
-          borderRadius: 6,
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif',
-        },
-      }}
+    <BaseLayout
+      currentView={currentView}
+      onViewChange={handleViewChange}
+      onRefresh={fetchStatus}
     >
-      <div className={`sm-app${selected ? ' sm-app--with-rail' : ''}`}>
-        <ServiceSidebar
-          services={allServices}
-          serviceState={serviceState}
-          selectedId={selectedServiceId}
-          onSelect={setSelectedServiceId}
-          onCreate={() => {
-            setEditService(null);
-            setShowServiceEdit(true);
-          }}
-        />
-
-        <div className="sm-main">
-          <MainToolbar
-            title={selected ? selected.name : '日志'}
-            subtitle={selected ? (running ? '运行中' : '已停止') : undefined}
-            selectedService={selected}
-            running={running}
-            canRestart={canRestart}
-            onStart={() => selected && startService(selected.id)}
-            onStop={() => selected && stopService(selected.id)}
-            onRestart={() => selected && restartService(selected.id)}
-            onRefresh={() => {
-              fetchStatus();
-            }}
-            onOpenLogsDir={async () => {
-              await api.openLogsDir();
-            }}
-            onOpenUrl={(u) => api.openExternal(u)}
-            url={url}
-          />
-
-          <div className="sm-main-body">
-            <div className="sm-panel-head">
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                <UnorderedListOutlined /> 日志
-              </Typography.Text>
-              <Space>
-                {selected && (
-                  <Button type="link" size="small" onClick={() => setLogDrawerId(selected.id)}>
-                    查看「{selected.name}」日志
-                  </Button>
-                )}
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => {
-                    if (!selectedServiceId) {
-                      setGlobalLogs([]);
-                      return;
-                    }
-                    setServiceLogs((prev) => ({
-                      ...prev,
-                      [selectedServiceId]: [],
-                    }));
-                  }}
-                >
-                  清空
-                </Button>
-              </Space>
-            </div>
-            <LogConsole
-              lines={
-                selectedServiceId
-                  ? formatLogsForConsole(serviceLogs[selectedServiceId] || [])
-                  : globalLogs
-              }
-            />
-          </div>
-
-          <footer className="sm-statusbar">
-            <span>{globalLogs.length} 条</span>
-            <span className="sm-statusbar-sep">|</span>
-            <span>服务管理器 v{__APP_VERSION__}</span>
-            {selected && (
-              <>
-                <span className="sm-statusbar-sep">|</span>
-                <span>
-                  {selected.name} · PID {st?.pid ?? '—'}
-                </span>
-              </>
-            )}
-          </footer>
-        </div>
-
-        {selected && (
-          <aside className="sm-command-rail" aria-label="当前任务启动命令">
-            <div className="sm-command-rail-head">
-              <Typography.Text strong style={{ fontSize: 12 }}>
-                {selected.name}
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-                启动命令
-              </Typography.Text>
-            </div>
-            <pre className="sm-command-rail-body">{fullCommand || '—'}</pre>
-          </aside>
-        )}
-
-        {selected && (
-          <div className="sm-floating-actions">
-            <Button size="small" onClick={() => handleEditService(selected)}>
-              编辑任务
-            </Button>
-            <Button size="small" danger onClick={() => handleDeleteService(selected.id, selected.name)}>
-              删除
-            </Button>
-          </div>
-        )}
-
-        <WeChatBotControls
-          serviceState={serviceState}
-          isOpen={showWeChatConfig}
-          onStart={() => startService('wechat')}
-          onStop={() => stopService('wechat')}
-          onRefresh={fetchStatus}
-          addLog={addLog}
-          onClose={() => setShowWeChatConfig(false)}
-        />
-
-        <ServiceLogDrawer
-          visible={logDrawerId !== null}
-          onClose={() => setLogDrawerId(null)}
-          serviceId={logDrawerId || ''}
-          serviceLogs={serviceLogs}
-          onClear={(id) =>
-            setServiceLogs((prev) => ({
-              ...prev,
-              [id]: [],
-            }))
-          }
-        />
-
-        <ServiceEditDialog
-          visible={showServiceEdit}
-          onClose={() => {
-            setShowServiceEdit(false);
-            setEditService(null);
-          }}
-          onSave={editService ? handleUpdateService : handleCreateService}
-          editService={editService}
-        />
-      </div>
-    </ConfigProvider>
+      {renderMainContent()}
+    </BaseLayout>
   );
 }
 
