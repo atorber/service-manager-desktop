@@ -11,16 +11,16 @@
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
       "updatedAt": "2026-04-08T06:03:10.744945300+00:00"
     },
-    "wechat": {
-      "id": "wechat",
-      "name": "微信机器人",
-      "workingDir": "{rootDir}/scripts/wxagent",
-      "command": "cd C:\\GitHub\\frida-agent\\agent\\ && npm run start",
-      "port": 19088,
+    "qwen_voice_to_text": {
+      "id": "qwen_voice_to_text",
+      "name": "千问语音转文本",
+      "workingDir": "{rootDir}",
+      "command": "cd C:\\GitHub\\easy-auto\\ && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\chrome_test_weibo_qwen.py",
+      "port": 0,
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
-      "updatedAt": "2026-04-08T05:56:41.482568800+00:00"
+      "updatedAt": "2026-04-08T06:02:57.975066200+00:00"
     },
     "task_1775200250780_18a2aef6670153b8": {
       "id": "task_1775200250780_18a2aef6670153b8",
@@ -57,16 +57,27 @@
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
       "updatedAt": "2026-04-08T05:53:54.329160600+00:00"
     },
-    "qwen_voice_to_text": {
-      "id": "qwen_voice_to_text",
-      "name": "千问语音转文本",
-      "workingDir": "{rootDir}",
-      "command": "cd C:\\GitHub\\easy-auto\\ && C:\\ProgramData\\anaconda3\\envs\\py310\\python.exe app\\tools\\chrome_test_weibo_qwen.py",
+    "task_1775722323708_18a4cbdccb0a91c0": {
+      "id": "task_1775722323708_18a4cbdccb0a91c0",
+      "name": "百舸前端服务",
+      "workingDir": "/Users/luyuchao/baidu/inf-fe/baige",
+      "command": "npm run start-online",
       "port": 0,
+      "enabled": true,
+      "isPreset": false,
+      "createdAt": "2026-04-09T08:12:03.709455+00:00",
+      "updatedAt": "2026-04-09T08:12:03.709455+00:00"
+    },
+    "wechat": {
+      "id": "wechat",
+      "name": "微信机器人",
+      "workingDir": "{rootDir}/scripts/wxagent",
+      "command": "cd C:\\GitHub\\frida-agent\\agent\\ && npm run start",
+      "port": 19088,
       "enabled": true,
       "isPreset": true,
       "createdAt": "2026-04-03T07:06:12.180926+00:00",
-      "updatedAt": "2026-04-08T06:02:57.975066200+00:00"
+      "updatedAt": "2026-04-08T05:56:41.482568800+00:00"
     }
   }
 }

@@ -6,6 +6,10 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
 use std::io::{BufRead, BufReader};
+#[cfg(target_os = "windows")]
+use std::sync::{Mutex, OnceLock};
+#[cfg(target_os = "windows")]
+use std::time::Instant;
 
 use crate::service_config::ServiceConfig;
 
@@ -41,6 +45,20 @@ fn parse_leading_cd_dir(cmd: &str) -> Option<String> {
     }
 }
 
+fn strip_leading_cd_chain(cmd: &str) -> String {
+    let s = cmd.trim_start();
+    if s.len() < 3 {
+        return cmd.to_string();
+    }
+    if !s.to_ascii_lowercase().starts_with("cd ") {
+        return cmd.to_string();
+    }
+    if let Some(idx) = s.find("&&") {
+        return s[idx + 2..].trim_start().to_string();
+    }
+    cmd.to_string()
+}
+
 /// 避免在 GUI 应用里反复拉起控制台子进程时出现 CMD 黑窗闪烁（状态轮询会高频调用 tasklist 等）。
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -57,6 +75,16 @@ pub struct ServiceStatus {
     pub pid: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProcessMetrics {
+    cpu_percent: f32,
+    memory_bytes: u64,
 }
 
 // ── PID file management ───────────────────────────────────────────────
@@ -212,6 +240,7 @@ pub async fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+#[cfg(target_os = "windows")]
 fn regex_lite_match(text: &str, pattern: &str) -> bool {
     // Simple word-boundary PID match without regex crate
     let pid_str = pattern.trim_start_matches(r"\b").trim_end_matches(r"\b");
@@ -221,6 +250,92 @@ fn regex_lite_match(text: &str, pattern: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn get_process_metrics(pid: u32) -> Option<ProcessMetrics> {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "%cpu=", "-o", "rss="])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().find(|l| !l.trim().is_empty())?.trim().to_string();
+    let mut parts = line.split_whitespace();
+    let cpu_percent = parts.next()?.parse::<f32>().ok()?;
+    let rss_kb = parts.next()?.parse::<u64>().ok()?;
+    Some(ProcessMetrics {
+        cpu_percent,
+        memory_bytes: rss_kb.saturating_mul(1024),
+    })
+}
+
+#[cfg(target_os = "windows")]
+async fn get_process_metrics(pid: u32) -> Option<ProcessMetrics> {
+    let script = format!(
+        "$ErrorActionPreference='SilentlyContinue'; \
+         $p=Get-Process -Id {}; \
+         if ($null -eq $p) {{ exit 1 }}; \
+         $cpu=[double]$p.CPU; \
+         $ws=[uint64]$p.WorkingSet64; \
+         Write-Output ('{0}|{1}' -f $cpu,$ws)",
+        pid
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(WIN_CREATE_NO_WINDOW)
+        .output()
+        .await
+        .ok()?;
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().find(|l| !l.trim().is_empty())?.trim().to_string();
+    if line.is_empty() {
+        let mut cache = windows_cpu_cache().lock().ok()?;
+        cache.remove(&pid);
+        return None;
+    }
+    let mut parts = line.split('|');
+    let cpu_seconds = parts.next()?.trim().parse::<f64>().ok()?;
+    let memory_bytes = parts.next()?.trim().parse::<u64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    let now = Instant::now();
+    let logical_cores = std::thread::available_parallelism()
+        .map(|n| n.get() as f64)
+        .unwrap_or(1.0)
+        .max(1.0);
+    let mut cpu_percent = 0.0_f64;
+
+    if let Ok(mut cache) = windows_cpu_cache().lock() {
+        if let Some((last_cpu_seconds, last_ts)) = cache.get(&pid).copied() {
+            let elapsed = now.duration_since(last_ts).as_secs_f64();
+            if elapsed > 0.0 {
+                let cpu_delta = (cpu_seconds - last_cpu_seconds).max(0.0);
+                cpu_percent = (cpu_delta / (elapsed * logical_cores)) * 100.0;
+            }
+        }
+        cache.insert(pid, (cpu_seconds, now));
+    }
+
+    let cpu_percent = cpu_percent.clamp(0.0, 100.0) as f32;
+    Some(ProcessMetrics {
+        cpu_percent,
+        memory_bytes,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn windows_cpu_cache() -> &'static Mutex<HashMap<u32, (f64, Instant)>> {
+    static CACHE: OnceLock<Mutex<HashMap<u32, (f64, Instant)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// 从子进程的 stdout/stderr 读取输出并通过 Tauri 事件推送到前端。
@@ -365,19 +480,24 @@ async fn start_service_unix(
     config: &ServiceConfig,
     working_dir: Option<&str>,
 ) -> Result<(bool, Option<u32>, String), String> {
+    let runtime_command = if working_dir.is_some() {
+        strip_leading_cd_chain(&config.command)
+    } else {
+        config.command.clone()
+    };
     let _ = app.emit(
         "service-log",
         serde_json::json!({
             "serviceId": service_id,
             "type": "info",
-            "message": format!("$ {}", config.command)
+            "message": format!("$ {}", runtime_command)
         }),
     );
 
     let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     let mut command = std::process::Command::new(&user_shell);
     command
-        .args(["-l", "-c", &config.command])
+        .args(["-l", "-c", &runtime_command])
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
@@ -433,7 +553,28 @@ async fn start_service_unix(
             // For shell-wrapped commands (e.g. `npm run dev`), child pid may be a wrapper process.
             // Prefer tracking the actual listener PID when a service port is configured.
             let tracked_pid = if config.port > 0 {
-                get_pid_by_port(config.port).await.or(Some(pid))
+                let mut port_pid = get_pid_by_port(config.port).await;
+                if port_pid.is_none() {
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        port_pid = get_pid_by_port(config.port).await;
+                        if port_pid.is_some() {
+                            break;
+                        }
+                    }
+                }
+                if port_pid.is_none() {
+                    let _ = kill_process(pid).await;
+                    return Ok((
+                        false,
+                        None,
+                        format!(
+                            "启动失败: 命令已执行但端口 {} 未监听，请检查启动命令与工作目录",
+                            config.port
+                        ),
+                    ));
+                }
+                port_pid.or(Some(pid))
             } else {
                 Some(pid)
             };
@@ -463,18 +604,23 @@ async fn start_service_windows(
     config: &ServiceConfig,
     working_dir: Option<&str>,
 ) -> Result<(bool, Option<u32>, String), String> {
+    let runtime_command = if working_dir.is_some() {
+        strip_leading_cd_chain(&config.command)
+    } else {
+        config.command.clone()
+    };
     let _ = app.emit(
         "service-log",
         serde_json::json!({
             "serviceId": service_id,
             "type": "info",
-            "message": format!("$ {}", config.command)
+            "message": format!("$ {}", runtime_command)
         }),
     );
 
     let mut command = std::process::Command::new("cmd");
     command
-        .args(["/C", &config.command])
+        .args(["/C", &runtime_command])
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
@@ -523,7 +669,28 @@ async fn start_service_windows(
             // For shell-wrapped commands (e.g. `npm run dev`), child pid may be a wrapper process.
             // Prefer tracking the actual listener PID when a service port is configured.
             let tracked_pid = if config.port > 0 {
-                get_pid_by_port(config.port).await.or(Some(pid))
+                let mut port_pid = get_pid_by_port(config.port).await;
+                if port_pid.is_none() {
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                        port_pid = get_pid_by_port(config.port).await;
+                        if port_pid.is_some() {
+                            break;
+                        }
+                    }
+                }
+                if port_pid.is_none() {
+                    let _ = kill_process(pid).await;
+                    return Ok((
+                        false,
+                        None,
+                        format!(
+                            "启动失败: 命令已执行但端口 {} 未监听，请检查启动命令与工作目录",
+                            config.port
+                        ),
+                    ));
+                }
+                port_pid.or(Some(pid))
             } else {
                 Some(pid)
             };
@@ -601,6 +768,14 @@ pub async fn get_all_status(
             None => false,
         };
         let final_pid = if running { pid } else { None };
+        let metrics = if running {
+            match final_pid {
+                Some(p) => get_process_metrics(p).await,
+                None => None,
+            }
+        } else {
+            None
+        };
 
         result.insert(
             config.id.clone(),
@@ -609,6 +784,8 @@ pub async fn get_all_status(
                 pid: final_pid,
                 // We intentionally do not probe ports anymore.
                 port: None,
+                cpu_percent: metrics.map(|m| m.cpu_percent),
+                memory_bytes: metrics.map(|m| m.memory_bytes),
             },
         );
     }

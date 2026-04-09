@@ -28,7 +28,19 @@ const ServiceDetailsView: React.FC<ServiceDetailsViewProps> = ({
   onClearLogs
 }) => {
   const isRunning = state?.running ?? false;
+  const cpuPercent = isRunning ? Math.max(0, Math.min(100, state?.cpuPercent ?? 0)) : 0;
+  const memoryBytes = isRunning ? (state?.memoryBytes ?? 0) : 0;
+  const memoryCapBytes = 8 * 1024 * 1024 * 1024;
+  const memoryPercent = Math.max(0, Math.min(100, (memoryBytes / memoryCapBytes) * 100));
   const consoleRef = useRef<HTMLDivElement>(null);
+
+  const formatMemory = (bytes: number) => {
+    if (bytes <= 0) return '0 B';
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${bytes} B`;
+  };
 
   useEffect(() => {
     if (consoleRef.current) {
@@ -95,23 +107,16 @@ const ServiceDetailsView: React.FC<ServiceDetailsViewProps> = ({
           <div>
             <div className="flex justify-between items-start">
               <p className="text-on-surface-variant font-headline text-sm font-bold tracking-wider uppercase">CPU 使用率</p>
-              <span className="text-primary font-headline text-2xl font-black">{isRunning ? '24.8%' : '0%'}</span>
+              <span className="text-primary font-headline text-2xl font-black">{cpuPercent.toFixed(1)}%</span>
             </div>
           </div>
           <div className="mt-4 flex-1 flex items-end gap-1">
-            {isRunning && (
-              <div className="w-full h-16 flex items-end justify-between px-1">
-                <div className="w-2 bg-primary/20 h-8 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/20 h-12 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/20 h-10 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/40 h-14 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/60 h-16 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/40 h-12 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/20 h-8 rounded-t-sm"></div>
-                <div className="w-2 bg-primary/50 h-11 rounded-t-sm"></div>
-                <div className="w-2 bg-primary h-14 rounded-t-sm"></div>
-              </div>
-            )}
+            <div className="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden">
+              <div
+                className={`h-full bg-primary shadow-[0_0_10px_rgba(0,227,253,0.4)] ${isRunning ? '' : 'w-0'}`}
+                style={isRunning ? { width: `${cpuPercent}%` } : undefined}
+              ></div>
+            </div>
           </div>
         </div>
 
@@ -119,12 +124,15 @@ const ServiceDetailsView: React.FC<ServiceDetailsViewProps> = ({
           <div>
             <div className="flex justify-between items-start">
               <p className="text-on-surface-variant font-headline text-sm font-bold tracking-wider uppercase">内存占用</p>
-              <span className="text-tertiary-dim font-headline text-2xl font-black">{isRunning ? '4.2 GB' : '0 MB'}</span>
+              <span className="text-tertiary-dim font-headline text-2xl font-black">{formatMemory(memoryBytes)}</span>
             </div>
           </div>
           <div className="mt-4">
             <div className="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden">
-              <div className={`h-full bg-gradient-to-r from-tertiary-dim to-tertiary shadow-[0_0_10px_rgba(0,239,153,0.3)] ${isRunning ? 'w-[62%]' : 'w-0'}`}></div>
+              <div
+                className={`h-full bg-gradient-to-r from-tertiary-dim to-tertiary shadow-[0_0_10px_rgba(0,239,153,0.3)] ${isRunning ? '' : 'w-0'}`}
+                style={isRunning ? { width: `${memoryPercent}%` } : undefined}
+              ></div>
             </div>
             <div className="flex justify-between mt-2">
               <span className="text-[10px] text-on-surface-variant uppercase font-bold tracking-widest">0 GB</span>

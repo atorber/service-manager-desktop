@@ -2,10 +2,10 @@ import React from 'react';
 
 const SettingsView: React.FC = () => {
   return (
-    <main className="p-12 min-h-[calc(100vh-5rem)]">
+    <main className="p-10 pb-12 min-h-[calc(100vh-5rem)]">
       {/* Header Section */}
-      <div className="mb-12">
-        <h2 className="text-4xl font-black font-headline tracking-tighter text-on-surface mb-2">全局设置</h2>
+      <div className="mb-10">
+        <h1 className="font-headline text-4xl font-black text-on-surface tracking-tight mb-2">全局设置</h1>
         <p className="text-on-surface-variant max-w-2xl font-light">配置服务网格的核心引擎行为、网络协议和诊断日志保留策略。</p>
       </div>
 

@@ -1,14 +1,15 @@
 import React from 'react';
+import packageJson from '../../../package.json';
 
 export type ViewType = 'dashboard' | 'create' | 'logs' | 'settings';
 
 interface SidebarProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
-  version?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, version = 'v2.4' }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange }) => {
+  const version = `v${packageJson.version}`;
   const getNavClass = (view: ViewType) => {
     const baseClass = "flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 font-['Space_Grotesk'] font-bold tracking-tight active:scale-95 ";
     if (currentView === view) {

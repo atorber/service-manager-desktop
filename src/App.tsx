@@ -291,9 +291,12 @@ function App() {
         );
       case 'logs':
         return (
-          <div className="p-10 text-on-surface">
-            <div className="flex justify-between items-center mb-4">
-                <h1 className="text-3xl font-bold font-headline">全局日志</h1>
+          <div className="p-10 pb-12 text-on-surface">
+            <div className="mb-10">
+              <h1 className="font-headline text-4xl font-black text-on-surface tracking-tight mb-2">全局日志</h1>
+              <p className="text-on-surface-variant font-light">查看所有服务的实时输出与历史打印，支持快速清空当前缓存。</p>
+            </div>
+            <div className="flex justify-end items-center mb-4">
                 <button onClick={() => setGlobalLogs([])} className="hover:text-primary transition-colors flex items-center gap-1 text-sm text-slate-500">
                     <span className="material-symbols-outlined text-sm">delete</span> 清空当前
                 </button>
@@ -327,6 +330,8 @@ function App() {
       currentView={currentView}
       onViewChange={handleViewChange}
       onRefresh={fetchStatus}
+      showBackButton={currentView === 'dashboard' && !!selectedServiceId}
+      onBack={() => setSelectedServiceId(null)}
     >
       {renderMainContent()}
     </BaseLayout>

@@ -3,4 +3,6 @@ export interface ServiceStateItem {
   pid?: number;
   port?: boolean;
   apiHealth?: boolean;
+  cpuPercent?: number;
+  memoryBytes?: number;
 }

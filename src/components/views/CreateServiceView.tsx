@@ -54,18 +54,16 @@ const CreateServiceView: React.FC<CreateServiceViewProps> = ({ editService, onSa
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-12">
-      <div className="mb-12">
-        <span className="text-primary font-headline font-bold text-sm tracking-[0.3em] uppercase mb-2 block">系统配置</span>
-        <h2 className="text-5xl font-headline font-black tracking-tighter text-on-surface mb-4">
+    <div className="p-10 pb-12">
+      <div className="mb-10">
+        <h1 className="font-headline text-4xl font-black text-on-surface tracking-tight mb-2">
           {editService ? '编辑服务' : '初始化新服务'}
-        </h2>
+        </h1>
         <p className="text-on-surface-variant max-w-2xl leading-relaxed">定义后台引擎参数。请确保项目路径为绝对路径，且已为目标环境转义 CLI 命令。</p>
       </div>
 
-      <div className="grid grid-cols-12 gap-8">
-        {/* Left Column */}
-        <div className="col-span-12 lg:col-span-7 space-y-8">
+      <div className="max-w-4xl space-y-8">
+        <div className="space-y-8">
           <section className="bg-surface-container-high p-8 rounded-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
             <h3 className="font-headline font-bold text-xl mb-8 flex items-center gap-2">
@@ -126,71 +124,19 @@ const CreateServiceView: React.FC<CreateServiceViewProps> = ({ editService, onSa
           </section>
         </div>
 
-        {/* Right Column */}
-        <div className="col-span-12 lg:col-span-5 space-y-8">
-          <section className="bg-surface-container p-8 rounded-xl ring-1 ring-outline-variant/10">
-            <h3 className="font-headline font-bold text-xl mb-8 flex items-center gap-2">
-              <span className="material-symbols-outlined text-tertiary-dim">dynamic_form</span>
-              网络与运行时
-            </h3>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">监听端口</label>
-                <input
-                  value={formData.port}
-                  onChange={e => setFormData({...formData, port: e.target.value})}
-                  className="w-full bg-surface-container-highest border-none p-3 text-on-surface rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono text-sm"
-                  placeholder="3000"
-                  type="number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-2">URL 模板</label>
-                <input
-                  value={formData.urlTemplate}
-                  onChange={e => setFormData({...formData, urlTemplate: e.target.value})}
-                  className="w-full bg-surface-container-highest border-none p-3 text-on-surface rounded-lg outline-none focus:ring-1 focus:ring-primary font-mono text-sm"
-                  placeholder="http://localhost:{port}"
-                  type="text"
-                />
-              </div>
-
-              <div className="h-px bg-outline-variant/5"></div>
-
-              <div className="flex items-center justify-between group">
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-bold text-on-surface">开机自启动</span>
-                  <span className="text-xs text-on-surface-variant">系统启动时初始化服务</span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    checked={formData.autoStart}
-                    onChange={e => setFormData({...formData, autoStart: e.target.checked})}
-                    type="checkbox"
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
-            </div>
-          </section>
-
-          <div className="flex flex-col gap-4">
-            <button
-              onClick={handleSubmit}
-              className="w-full py-4 bg-gradient-to-r from-primary to-primary-container text-on-primary-container font-headline font-black text-sm uppercase tracking-[0.2em] rounded-lg shadow-[0_10px_30px_rgba(0,227,253,0.3)] hover:scale-[1.02] active:scale-95 transition-all"
-            >
-              {editService ? '保存修改' : '创建服务实例'}
-            </button>
-            <button
-              onClick={onCancel}
-              className="w-full py-4 bg-surface-container-highest text-on-surface-variant font-headline font-bold text-sm uppercase tracking-widest rounded-lg ring-1 ring-outline-variant/20 hover:bg-surface-bright transition-colors active:scale-95"
-            >
-              取消
-            </button>
-          </div>
+        <div className="flex gap-4 flex-col sm:flex-row sm:justify-end pt-1">
+          <button
+            onClick={handleSubmit}
+            className="py-4 bg-gradient-to-r from-primary to-primary-container text-on-primary-container font-headline font-black text-sm uppercase tracking-[0.2em] rounded-lg shadow-[0_10px_30px_rgba(0,227,253,0.3)] hover:scale-[1.02] active:scale-95 transition-all w-full sm:w-auto sm:min-w-[240px] px-10"
+          >
+            {editService ? '保存修改' : '创建服务实例'}
+          </button>
+          <button
+            onClick={onCancel}
+            className="py-4 bg-surface-container-highest text-on-surface-variant font-headline font-bold text-sm uppercase tracking-widest rounded-lg ring-1 ring-outline-variant/20 hover:bg-surface-bright transition-colors active:scale-95 w-full sm:w-auto sm:min-w-[160px] px-8"
+          >
+            取消
+          </button>
         </div>
       </div>
     </div>

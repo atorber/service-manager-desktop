@@ -7,13 +7,22 @@ interface BaseLayoutProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
   onRefresh?: () => void;
+  showBackButton?: boolean;
+  onBack?: () => void;
 }
 
-const BaseLayout: React.FC<BaseLayoutProps> = ({ children, currentView, onViewChange, onRefresh }) => {
+const BaseLayout: React.FC<BaseLayoutProps> = ({
+  children,
+  currentView,
+  onViewChange,
+  onRefresh,
+  showBackButton,
+  onBack,
+}) => {
   return (
     <div className="min-h-screen bg-background text-on-surface flex flex-col font-body selection:bg-primary/30">
       <Sidebar currentView={currentView} onViewChange={onViewChange} />
-      <TopNavBar onRefresh={onRefresh} />
+      <TopNavBar onRefresh={onRefresh} showBackButton={showBackButton} onBack={onBack} />
 
       {/* Main Content Area */}
       {/*
