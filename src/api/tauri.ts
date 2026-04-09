@@ -21,8 +21,6 @@ export const api = {
       invoke('start_wechat'),
     stop: (): R<{ success: boolean; message: string }> =>
       invoke('stop_wechat'),
-    status: (): R<{ success: boolean; data?: any; message?: string }> =>
-      invoke('get_wechat_status'),
     checkApiHealth: (): R<{ success: boolean; health?: boolean }> =>
       invoke('check_wechat_api_health'),
     getPushConfig: (): R<{ success: boolean; config?: any }> =>
@@ -68,4 +66,9 @@ export const api = {
 
   onWeChatLog: (callback: (msg: string) => void): Promise<UnlistenFn> =>
     listen<string>('wechat-log', (event) => callback(event.payload)),
+
+  onServiceLog: (
+    callback: (payload: { serviceId: string; type: 'info' | 'error'; message: string }) => void,
+  ): Promise<UnlistenFn> =>
+    listen<any>('service-log', (event) => callback(event.payload)),
 };
