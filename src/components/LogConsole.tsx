@@ -8,7 +8,7 @@ const LogConsole: React.FC<Props> = ({ lines }) => {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    endRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [lines]);
 
   return (

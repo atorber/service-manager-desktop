@@ -11,6 +11,11 @@ import WeChatBotControls from './components/WeChatBotControls';
 import ServiceLogDrawer from './components/ServiceLogDrawer';
 import ServiceEditDialog from './components/ServiceEditDialog';
 
+const MAX_GLOBAL_LOGS = 500;
+const MAX_SERVICE_LOGS = 800;
+const LOG_FLUSH_INTERVAL_MS = 200;
+const MAX_CONSOLE_LINES = 300;
+
 interface ServiceState {
   backend: { running: boolean; pid?: number; port: boolean };
   frontend: { running: boolean; pid?: number; port: boolean };
@@ -22,6 +27,13 @@ interface LogEntry {
   timestamp: string;
   message: string;
   type: 'info' | 'success' | 'error' | 'warning';
+}
+
+interface PendingLogEntry {
+  serviceId?: string;
+  logEntry: LogEntry;
+  globalLogMessage: string;
+  inferredServiceId?: string | null;
 }
 
 function App() {
@@ -39,6 +51,9 @@ function App() {
   const [showServiceEdit, setShowServiceEdit] = useState(false);
   const [editService, setEditService] = useState<ServiceConfig | null>(null);
   const [logDrawerId, setLogDrawerId] = useState<string | null>(null);
+  const pendingLogsRef = useRef<PendingLogEntry[]>([]);
+
+  const appendCapped = <T,>(prev: T[], items: T[], maxSize: number) => [...prev, ...items].slice(-maxSize);
 
   const addLog = (msg: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', serviceId?: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -46,26 +61,19 @@ function App() {
     const logPrefix =
       type === 'error' ? '[ERROR]' : type === 'success' ? '[SUCCESS]' : type === 'warning' ? '[WARNING]' : '[INFO]';
     const globalLogMessage = `${timestamp} ${logPrefix} ${msg}`;
-
-    setGlobalLogs((prev) => [...prev, globalLogMessage].slice(-500));
-
-    if (serviceId) {
-      setServiceLogs((prev) => ({
-        ...prev,
-        [serviceId]: [...(prev[serviceId] || []), logEntry],
-      }));
-    } else {
-      let inferred: string | null = null;
-      if (msg.includes('后端') || msg.includes('backend')) inferred = 'backend';
-      else if (msg.includes('前端') || msg.includes('frontend')) inferred = 'frontend';
-      else if (msg.includes('微信') || msg.includes('wechat')) inferred = 'wechat';
-      if (inferred) {
-        setServiceLogs((prev) => ({
-          ...prev,
-          [inferred]: [...(prev[inferred] || []), logEntry],
-        }));
-      }
+    let inferredServiceId: string | null = null;
+    if (!serviceId) {
+      if (msg.includes('后端') || msg.includes('backend')) inferredServiceId = 'backend';
+      else if (msg.includes('前端') || msg.includes('frontend')) inferredServiceId = 'frontend';
+      else if (msg.includes('微信') || msg.includes('wechat')) inferredServiceId = 'wechat';
     }
+
+    pendingLogsRef.current.push({
+      serviceId,
+      logEntry,
+      globalLogMessage,
+      inferredServiceId,
+    });
   };
 
   const formatLogEntry = (l: LogEntry) => {
@@ -80,7 +88,7 @@ function App() {
     return `${l.timestamp} ${prefix} ${l.message}`;
   };
 
-  const formatLogsForConsole = (logs: LogEntry[]) => logs.map(formatLogEntry);
+  const formatLogsForConsole = (logs: LogEntry[]) => logs.slice(-MAX_CONSOLE_LINES).map(formatLogEntry);
 
   const loadAllServices = async () => {
     try {
@@ -301,6 +309,30 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const timer = setInterval(() => {
+      const pending = pendingLogsRef.current;
+      if (pending.length === 0) return;
+
+      pendingLogsRef.current = [];
+
+      setGlobalLogs((prev) => appendCapped(prev, pending.map((item) => item.globalLogMessage), MAX_GLOBAL_LOGS));
+
+      setServiceLogs((prev) => {
+        const next = { ...prev };
+        for (const item of pending) {
+          const targetId = item.serviceId || item.inferredServiceId;
+          if (!targetId) continue;
+          const current = next[targetId] || [];
+          next[targetId] = appendCapped(current, [item.logEntry], MAX_SERVICE_LOGS);
+        }
+        return next;
+      });
+    }, LOG_FLUSH_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (!ready) return;
     fetchStatus();
     const interval = setInterval(() => {
@@ -397,7 +429,7 @@ function App() {
               lines={
                 selectedServiceId
                   ? formatLogsForConsole(serviceLogs[selectedServiceId] || [])
-                  : globalLogs
+                  : globalLogs.slice(-MAX_CONSOLE_LINES)
               }
             />
           </div>
